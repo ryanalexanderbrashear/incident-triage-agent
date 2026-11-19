@@ -18,7 +18,15 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
+from mcp.shared.exceptions import MCPError
+from mcp.types import INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND
+
 LOGGER_NAME = "incident_mcp"
+
+# Protocol errors that mean the caller asked wrongly (an unknown resource arrives as
+# INVALID_PARAMS). They are logged as "rejected" at INFO; anything else that escapes a handler
+# is a server fault, logged as "raised" at ERROR.
+_CALLER_ERROR_CODES = frozenset({INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS})
 
 request_id_var: ContextVar[str | None] = ContextVar("incident_mcp_request_id", default=None)
 
@@ -77,7 +85,9 @@ async def request_logging(ctx: Any, call_next: Callable[[Any], Awaitable[Any]]) 
     """MCP server middleware: one JSON line per inbound request, with a fresh request ID.
 
     Runs before the SDK validates arguments or looks up the tool, so calls it rejects
-    (bad arguments, unknown tool) are logged too.
+    (bad arguments, unknown tool) are logged too. Outcomes: "ok"; "tool_error" (the tool
+    reported an anticipated error to the model); "rejected" (a protocol error caused by the
+    request, such as an unknown resource); "raised" (a server fault, logged at ERROR).
     """
     request: _RequestContext = ctx
     if request.request_id is None:  # a notification, not a request
@@ -87,13 +97,21 @@ async def request_logging(ctx: Any, call_next: Callable[[Any], Awaitable[Any]]) 
     started = time.perf_counter()
     fields: dict[str, Any] = {"jsonrpc_id": request.request_id, "method": request.method}
     if request.method == "tools/call":
-        fields["tool"] = _tool_name(request.params)
+        fields["tool"] = _param(request.params, "name")
+    elif request.method == "resources/read":
+        fields["uri"] = _param(request.params, "uri")
     outcome = "raised"
     error_type: str | None = None
     try:
         result: object = await call_next(ctx)
         outcome = "tool_error" if _is_error_result(result) else "ok"
         return result
+    except MCPError as exc:
+        error_type = type(exc).__name__
+        fields["error_code"] = exc.code
+        if exc.code in _CALLER_ERROR_CODES:
+            outcome = "rejected"
+        raise
     except BaseException as exc:
         error_type = type(exc).__name__
         raise
@@ -114,9 +132,9 @@ def _is_error_result(result: object) -> bool:
     return bool(cast(Mapping[str, Any], result).get("isError"))
 
 
-def _tool_name(params: object) -> str | None:
-    """The tool name from raw tools/call params, which the SDK has not validated yet."""
+def _param(params: object, key: str) -> str | None:
+    """A string field from raw request params, which the SDK has not validated yet."""
     if not isinstance(params, Mapping):
         return None
-    name = cast(Mapping[str, Any], params).get("name")
-    return name if isinstance(name, str) else None
+    value = cast(Mapping[str, Any], params).get(key)
+    return value if isinstance(value, str) else None

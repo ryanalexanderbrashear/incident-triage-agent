@@ -2,16 +2,29 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Annotated
 
 from mcp.server import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ResourceNotFoundError, ToolError
+from mcp.server.mcpserver.resources import FunctionResource
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from incident_triage import __version__
-from incident_triage.fixtures import FixtureStore, LogLevel, load_fixtures
-from incident_triage.fixtures.models import INCIDENT_ID_PATTERN
+from incident_triage.fixtures import FixtureStore, LogLevel, Runbook, Ticket, load_fixtures
+from incident_triage.fixtures.models import (
+    INCIDENT_ID_PATTERN,
+    RUNBOOK_ID_PATTERN,
+    TICKET_ID_PATTERN,
+)
+from incident_triage.server.lookup import (
+    UnknownRunbookError,
+    UnknownTicketError,
+    get_runbook,
+    get_ticket,
+    incident_overview,
+)
 from incident_triage.server.observability import log_event, request_logging
 from incident_triage.server.search import (
     DEFAULT_LIMIT,
@@ -23,6 +36,9 @@ from incident_triage.server.search import (
 )
 
 SERVER_NAME = "incident-mcp"
+INCIDENT_URI_TEMPLATE = "incident://{incident_id}"
+JSON = "application/json"
+READ_ONLY = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
 
 INSTRUCTIONS = (
     "Read-only access to synthetic incident data: logs, tickets and runbooks. "
@@ -41,12 +57,7 @@ def build_server(store: FixtureStore | None = None) -> MCPServer:
         middleware=[request_logging],
     )
 
-    @server.tool(
-        name="search_logs",
-        annotations=ToolAnnotations(
-            read_only_hint=True, idempotent_hint=True, open_world_hint=False
-        ),
-    )
+    @server.tool(name="search_logs", annotations=READ_ONLY)
     def search_logs_tool(  # pyright: ignore[reportUnusedFunction]
         incident_id: Annotated[
             str, Field(pattern=INCIDENT_ID_PATTERN, description="e.g. INC-0001")
@@ -93,4 +104,73 @@ def build_server(store: FixtureStore | None = None) -> MCPServer:
         )
         return result
 
+    @server.tool(name="get_ticket", annotations=READ_ONLY)
+    def get_ticket_tool(  # pyright: ignore[reportUnusedFunction]
+        ticket_id: Annotated[str, Field(pattern=TICKET_ID_PATTERN, description="e.g. TKT-0001")],
+    ) -> Ticket:
+        """Get one ticket, with its body and comments. Read-only.
+
+        An incident's ticket IDs are listed in its incident://<incident_id> resource.
+        """
+        try:
+            ticket = get_ticket(fixtures, ticket_id)
+        except UnknownTicketError as exc:
+            log_event("tool_result", tool="get_ticket", error="unknown_ticket")
+            raise ToolError(str(exc)) from None
+        log_event("tool_result", tool="get_ticket", comment_count=len(ticket.comments))
+        return ticket
+
+    @server.tool(name="get_runbook", annotations=READ_ONLY)
+    def get_runbook_tool(  # pyright: ignore[reportUnusedFunction]
+        runbook_id: Annotated[
+            str, Field(pattern=RUNBOOK_ID_PATTERN, description="e.g. RB-DB-POOL")
+        ],
+    ) -> Runbook:
+        """Get one runbook: the symptoms it covers and its steps. Read-only.
+
+        An incident's runbook IDs are listed in its incident://<incident_id> resource.
+        """
+        try:
+            runbook = get_runbook(fixtures, runbook_id)
+        except UnknownRunbookError as exc:
+            log_event("tool_result", tool="get_runbook", error="unknown_runbook")
+            raise ToolError(str(exc)) from None
+        log_event("tool_result", tool="get_runbook", step_count=len(runbook.steps))
+        return runbook
+
+    def read_overview(incident_id: str) -> str:
+        try:
+            overview = incident_overview(fixtures, incident_id)
+        except UnknownIncidentError as exc:
+            raise ResourceNotFoundError(str(exc)) from None
+        return overview.model_dump_json()
+
+    server.resource(
+        INCIDENT_URI_TEMPLATE,
+        name="incident",
+        title="Incident overview",
+        description="Where an investigation starts: the alert, severity, ticket and runbook "
+        "IDs, and the incident's log count, time range and services.",
+        mime_type=JSON,
+    )(read_overview)
+
+    # Concrete entries as well as the template, so hosts can list the incidents.
+    for incident_id in sorted(fixtures.incidents):
+        server.add_resource(
+            FunctionResource.from_function(
+                _bind(read_overview, incident_id),
+                uri=INCIDENT_URI_TEMPLATE.format(incident_id=incident_id),
+                name=incident_id,
+                title=fixtures.incidents[incident_id].title,
+                mime_type=JSON,
+            )
+        )
+
     return server
+
+
+def _bind(read: Callable[[str], str], incident_id: str) -> Callable[[], str]:
+    def read_one() -> str:
+        return read(incident_id)
+
+    return read_one

@@ -2,7 +2,7 @@
 
 A small Python project that shows an MCP server, a golden-dataset eval harness and Langfuse tracing working together. An agent triages synthetic incident alerts by calling a purpose-built, read-only MCP server (`incident-mcp`), and every run is scored and traced.
 
-**Status:** repository tooling, CI, the incident fixtures and `incident-mcp` v0 with one tool (`search_logs`) are in place (issues #1–#4); the agent and evals are not built yet. See [PRODUCT.md](PRODUCT.md) for what this is and [the project plan](docs/projects/incident-triage-agent.md) for how it will be built. Progress is tracked in the GitHub issues and milestones.
+**Status:** repository tooling, CI, the incident fixtures and the `incident-mcp` server (three tools and the `incident://` resource) are in place (issues #1–#4 and #9); the agent and evals are not built yet. See [PRODUCT.md](PRODUCT.md) for what this is and [the project plan](docs/projects/incident-triage-agent.md) for how it will be built. Progress is tracked in the GitHub issues and milestones.
 
 This README is replaced with real usage, architecture and results as the milestones land. It will only state numbers that a run produced.
 
@@ -28,13 +28,22 @@ The data the MCP server will serve lives in `src/incident_triage/fixtures/data/`
 
 ## Running the server
 
-`incident-mcp` is a read-only MCP server over the fixtures. v0 has one tool, `search_logs`.
+`incident-mcp` is a read-only MCP server over the fixtures, with three tools and one resource.
 
 ```bash
 uv run incident-mcp                                   # stdio (what an MCP host launches)
 uv run incident-mcp --transport http --port 8000      # Streamable HTTP at http://127.0.0.1:8000/mcp
 ```
 
-`search_logs` takes an `incident_id` (required), `query` (space-separated terms, all must match), an optional minimum `level` and exact `service`, `limit` (1–50, default 20) and `offset`. It returns records in timestamp order with their `LOG-…` IDs, `total_matches` and `next_offset`. No match is an empty result; an unknown incident is an error that names the known ones.
+| Name | Kind | What it returns |
+|---|---|---|
+| `incident://{incident_id}` | resource (JSON) | Where an investigation starts: the alert, severity, `ticket_ids`, `runbook_ids`, `log_count`, first and last log time, and the services in the logs. Listed per incident and as a template. |
+| `search_logs` | tool | One page of an incident's logs. Takes an `incident_id` (required), `query` (space-separated terms, all must match), an optional minimum `level` and exact `service`, `limit` (1–50, default 20) and `offset`. Returns records in timestamp order with their `LOG-…` IDs, `total_matches` and `next_offset`. |
+| `get_ticket` | tool | One ticket (`TKT-…`), with its body and comments. |
+| `get_runbook` | tool | One runbook (`RB-…`): the symptoms it covers and its steps. |
 
-Logs are JSON lines on **stderr**, never stdout (stdout is the protocol channel under stdio): one `server_started` line with the transport and fixture counts, then one `request` line per request with a fresh `request_id`, its `method`, `tool`, `outcome` (`ok`, `tool_error` or `raised`) and `duration_ms`. Invalid fixtures stop the server with exit code 2 and a `fixtures_invalid` line naming the file and line.
+A model using the tools can't read resources itself; the host or agent code reads `incident://` and gives it the overview. No match from `search_logs` is an empty result. An unknown but well-formed ID is an explicit error: an unknown incident names the known ones, and an unknown ticket or runbook points to the incident's `incident://` overview. A malformed or wrong-kind ID (`get_ticket("RB-DB-POOL")`) is rejected by the tool's schema.
+
+Every response is bounded because the fixtures are. A log message is at most 1,000 characters with 20 attributes; a ticket body at most 4,000 characters, with 20 comments of up to 2,000; a runbook at most 10 symptoms and 20 steps, each up to 500. An oversized fixture fails at load time. The limits are named constants in `src/incident_triage/fixtures/models.py`.
+
+Logs are JSON lines on **stderr**, never stdout (stdout is the protocol channel under stdio): one `server_started` line with the transport and fixture counts, then one `request` line per request with a fresh `request_id`, its `method`, `tool` or `uri`, `outcome` and `duration_ms`. The outcome is `ok`; `tool_error` (a tool reported an anticipated error to the model); `rejected` (the request was wrong, for example an unknown resource, logged at INFO with its `error_code`); or `raised` (a server fault, logged at ERROR). So `"outcome": "raised"` always means a bug. Invalid fixtures stop the server with exit code 2 and a `fixtures_invalid` line naming the file and line.

@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from mcp import Client
+from mcp.shared.exceptions import MCPError
 
 from incident_triage.server import build_server
 
@@ -80,3 +81,24 @@ async def test_tool_result_line_shares_its_request_id(capsys: pytest.CaptureFixt
 async def test_nothing_is_written_to_stdout(capsys: pytest.CaptureFixture[str]) -> None:
     _, stdout = await _calls(capsys)
     assert stdout == ""
+
+
+@pytest.mark.asyncio
+async def test_unknown_resource_is_logged_as_rejected_not_as_a_crash(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    capsys.readouterr()
+    async with Client(build_server()) as client:
+        await client.read_resource("incident://INC-0001")
+        with pytest.raises(MCPError):
+            await client.read_resource("incident://INC-0099")
+    reads = [
+        line
+        for line in _lines(capsys.readouterr().err)
+        if line["event"] == "request" and line["method"] == "resources/read"
+    ]
+    assert [(r["uri"], r["outcome"], r["level"]) for r in reads] == [
+        ("incident://INC-0001", "ok", "INFO"),
+        ("incident://INC-0099", "rejected", "INFO"),
+    ]
+    assert reads[1]["error_code"] == -32602
