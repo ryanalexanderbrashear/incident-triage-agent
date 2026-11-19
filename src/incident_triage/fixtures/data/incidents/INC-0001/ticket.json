@@ -1,0 +1,16 @@
+{
+  "id": "TKT-0001",
+  "incident_id": "INC-0001",
+  "title": "Customers report checkout spinning, then failing",
+  "status": "investigating",
+  "created_at": "2026-11-03T14:21:00Z",
+  "reporter": "customer support lead",
+  "body": "Several customers report the checkout button spinning for a few seconds and then showing 'Something went wrong'. Started roughly 10-15 minutes ago. Cart page is also slow.",
+  "comments": [
+    {
+      "author": "on-call SRE",
+      "created_at": "2026-11-03T14:22:00Z",
+      "body": "Acknowledged. Load balancer shows all six checkout-api instances healthy. Looking at latency."
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "INC-0002",
+  "title": "payments-worker settlement error rate critical",
+  "service": "payments-worker",
+  "severity": "SEV1",
+  "alert": {
+    "fired_at": "2026-11-12T00:07:00Z",
+    "summary": "payments-worker settlement error rate 97% over 5 minutes (threshold 5%); settlements queue backing up",
+    "metric": "settlement_error_rate",
+    "threshold": 0.05,
+    "observed": 0.97
+  },
+  "runbook_ids": [
+    "RB-TLS-CERT"
+  ]
+}
