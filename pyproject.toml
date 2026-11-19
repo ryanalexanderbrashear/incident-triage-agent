@@ -5,18 +5,33 @@ description = "An incident-triage agent over a purpose-built MCP server, with a 
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-dependencies = []
+# Exact pins, recorded in docs/adr/0001-stack.md. Bump the ADR in the same change.
+dependencies = [
+    "anthropic==2.11.0",
+    "langfuse==5.2.0",
+    "mcp==2.3.0",
+]
 
 [dependency-groups]
 dev = [
     "pyright==1.1.414",
     "pytest==9.2.0",
+    "pytest-asyncio==1.5.0",
     "ruff==0.17.6",
 ]
 
 [build-system]
 requires = ["uv_build>=0.13.9,<0.14"]
 build-backend = "uv_build"
+
+[tool.uv]
+# cryptography (via mcp -> pyjwt[crypto]) ships macOS wheels only for Apple Silicon from 49.0.0.
+# Intel Macs get 48.0.1, the last release with a universal2 wheel; everything else stays current.
+# The pair forces uv to split the lockfile by platform. See docs/adr/0001-stack.md.
+constraint-dependencies = [
+    "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "cryptography>=50; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+]
 
 [tool.uv.build-backend]
 module-name = "incident_triage"
@@ -39,3 +54,4 @@ venv = ".venv"
 testpaths = ["tests"]
 addopts = ["--strict-markers"]
 xfail_strict = true
+asyncio_default_fixture_loop_scope = "function"

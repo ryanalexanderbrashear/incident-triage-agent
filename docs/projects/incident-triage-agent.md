@@ -127,7 +127,7 @@ Not a table here: one ticket each in the repository's GitHub issues, with milest
 ## Risks and unknowns
 
 - **The golden set is too easy, too hard, or circular.** It would make every later number meaningless. Response: hand-verify every label, include hard and adversarial cases from the start, check the baseline in M2 before building on it, and budget the labelling time explicitly (about 5 of M2's 10 hours).
-- **The SDK majors differ from what is known.** `mcp` 2.x and `langfuse` 5.x are both newer than the available experience. Response: M1 is built to find this out, and versions are pinned in an ADR.
+- **The SDK majors differ from what is known.** `mcp` 2.x and `langfuse` 5.x are both newer than the available experience. Response: M1 is built to find this out, and versions are pinned in [ADR-001](../adr/0001-stack.md).
 - **The judge flatters the agent.** A model grading a model's work tends to agree. Response: the judge never gates; it is calibrated against hand labels, and disagreements are published.
 - **Nondeterminism makes scores noisy.** Response: record the baseline over three runs per case, report per-case pass rates, and gate CI on recorded outputs, not live calls.
 - **Cost surprises.** Response: set a spend limit on the API key before M1, measure cost per case from the first trace, and cap eval concurrency.
@@ -150,7 +150,7 @@ Not a table here: one ticket each in the repository's GitHub issues, with milest
 5. **Own harness or `pydantic-evals` / Langfuse's experiment runner?** Recommend a time-boxed 1-hour spike early in M2 and the thin own harness unless the spike shows a clear win.
 6. **Judge model.** Recommend a different Claude tier from the agent's, to reduce self-agreement. Decide in M3.
 7. **Trace propagation across MCP.** Recommend leaving it as the M3 stretch.
-8. **Type checker.** Recommend pyright, strict on the server and graders. Decide in M1's ADR.
+8. **Type checker.** *Decided 2026-11-19:* pyright, `standard` repo-wide and strict on the server and graders as they land. See [ADR-001](../adr/0001-stack.md).
 
 ## Out of scope
 
