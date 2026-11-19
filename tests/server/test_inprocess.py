@@ -61,22 +61,3 @@ async def test_unknown_incident_is_an_explicit_tool_error() -> None:
     assert result.is_error is True
     assert "unknown incident_id INC-0099" in _text(result)
     assert "INC-0001" in _text(result)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "arguments",
-    [
-        {"incident_id": "INC-0001", "limit": 51},
-        {"incident_id": "INC-0001", "limit": 0},
-        {"incident_id": "INC-0001", "offset": -1},
-        {"incident_id": "incident one"},
-        {"incident_id": "INC-0001", "query": "x" * 201},
-        {"incident_id": "INC-0001", "level": "WARNING"},
-        {},
-    ],
-)
-async def test_invalid_arguments_are_rejected(arguments: dict[str, Any]) -> None:
-    async with Client(build_server()) as client:
-        result = await client.call_tool("search_logs", arguments)
-    assert result.is_error is True

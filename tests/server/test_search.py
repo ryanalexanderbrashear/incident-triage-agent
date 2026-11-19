@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from incident_triage.fixtures import FixtureStore, LogLevel, load_fixtures
+from incident_triage.server import search as search_module
 from incident_triage.server.search import UnknownIncidentError, search_logs
 
 
@@ -87,3 +88,37 @@ def test_unknown_incident_names_the_known_ones(store: FixtureStore) -> None:
         UnknownIncidentError, match=r"INC-0099; known incidents: INC-0001, INC-0002"
     ):
         search_logs(store, incident_id="INC-0099")
+
+
+def test_seed_pages_end_by_limit_or_end_not_size(store: FixtureStore) -> None:
+    assert search_logs(store, incident_id="INC-0001", limit=5).limited_by == "limit"
+    assert search_logs(store, incident_id="INC-0001", limit=50).limited_by == "end"
+
+
+def test_size_cap_splits_between_records_and_walks_every_one(
+    store: FixtureStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(search_module, "RESPONSE_BUDGET_CHARS", 2_000)
+    seen: list[str] = []
+    offset: int | None = 0
+    pages = 0
+    while offset is not None:
+        page = search_logs(store, incident_id="INC-0002", limit=50, offset=offset)
+        pages += 1
+        assert page.returned >= 1
+        if page.next_offset is not None:
+            assert page.limited_by == "size"
+        seen.extend(r.id for r in page.records)
+        offset = page.next_offset
+    assert pages > 1, "a 2,000-char budget must split the seed incident's logs"
+    assert seen == [r.id for r in store.logs_for("INC-0002")]
+
+
+def test_a_record_larger_than_the_budget_is_still_returned_alone(
+    store: FixtureStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(search_module, "RESPONSE_BUDGET_CHARS", 1)
+    page = search_logs(store, incident_id="INC-0001", limit=50)
+    assert page.returned == 1
+    assert page.limited_by == "size"
+    assert page.next_offset == 1

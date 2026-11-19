@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Annotated
 
@@ -15,9 +16,11 @@ from incident_triage import __version__
 from incident_triage.fixtures import FixtureStore, LogLevel, Runbook, Ticket, load_fixtures
 from incident_triage.fixtures.models import (
     INCIDENT_ID_PATTERN,
+    MAX_RUNBOOK_ID_CHARS,
     RUNBOOK_ID_PATTERN,
     TICKET_ID_PATTERN,
 )
+from incident_triage.server.guards import argument_names, reject_unknown_arguments
 from incident_triage.server.lookup import (
     UnknownRunbookError,
     UnknownTicketError,
@@ -49,12 +52,14 @@ INSTRUCTIONS = (
 def build_server(store: FixtureStore | None = None) -> MCPServer:
     """Create the server. Loads the packaged fixtures unless a store is given."""
     fixtures = store if store is not None else load_fixtures()
+    allowed_arguments: dict[str, frozenset[str]] = {}  # filled as each tool is registered
     server = MCPServer(
         SERVER_NAME,
         version=__version__,
         instructions=INSTRUCTIONS,
         log_level="WARNING",  # the SDK's own stderr lines; ours are JSON via observability
-        middleware=[request_logging],
+        # Outermost first: logging sees (and logs) what the argument guard rejects.
+        middleware=[request_logging, reject_unknown_arguments(allowed_arguments)],
     )
 
     @server.tool(name="search_logs", annotations=READ_ONLY)
@@ -123,7 +128,12 @@ def build_server(store: FixtureStore | None = None) -> MCPServer:
     @server.tool(name="get_runbook", annotations=READ_ONLY)
     def get_runbook_tool(  # pyright: ignore[reportUnusedFunction]
         runbook_id: Annotated[
-            str, Field(pattern=RUNBOOK_ID_PATTERN, description="e.g. RB-DB-POOL")
+            str,
+            Field(
+                pattern=RUNBOOK_ID_PATTERN,
+                max_length=MAX_RUNBOOK_ID_CHARS,
+                description="e.g. RB-DB-POOL",
+            ),
         ],
     ) -> Runbook:
         """Get one runbook: the symptoms it covers and its steps. Read-only.
@@ -138,7 +148,18 @@ def build_server(store: FixtureStore | None = None) -> MCPServer:
         log_event("tool_result", tool="get_runbook", step_count=len(runbook.steps))
         return runbook
 
+    allowed_arguments.update(
+        search_logs=argument_names(search_logs_tool),
+        get_ticket=argument_names(get_ticket_tool),
+        get_runbook=argument_names(get_runbook_tool),
+    )
+
     def read_overview(incident_id: str) -> str:
+        if re.fullmatch(INCIDENT_ID_PATTERN, incident_id) is None:
+            raise ResourceNotFoundError(
+                f"malformed incident_id {_clip(incident_id)!r}; "
+                "expected INC- and four digits, e.g. INC-0001"
+            )
         try:
             overview = incident_overview(fixtures, incident_id)
         except UnknownIncidentError as exc:
@@ -167,6 +188,11 @@ def build_server(store: FixtureStore | None = None) -> MCPServer:
         )
 
     return server
+
+
+def _clip(value: str, limit: int = 40) -> str:
+    """Inputs echoed back in errors are clipped, so an error stays within the response budget."""
+    return value if len(value) <= limit else value[:limit] + "…"
 
 
 def _bind(read: Callable[[str], str], incident_id: str) -> Callable[[], str]:

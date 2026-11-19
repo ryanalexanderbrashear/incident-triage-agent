@@ -7,6 +7,7 @@ below comes from the one mutation the test makes, not from a broken baseline.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -15,12 +16,20 @@ import pytest
 
 from incident_triage.fixtures import FixtureError, load_fixtures
 from incident_triage.fixtures.models import (
+    MAX_ATTRIBUTE_KEY_CHARS,
+    MAX_ATTRIBUTE_VALUE_CHARS,
     MAX_COMMENT_CHARS,
     MAX_LOG_ATTRIBUTES,
     MAX_LOG_MESSAGE_CHARS,
+    MAX_LOGS_PER_INCIDENT,
+    MAX_RUNBOOK_ID_CHARS,
     MAX_RUNBOOK_ITEM_CHARS,
     MAX_RUNBOOK_STEPS,
     MAX_RUNBOOK_SYMPTOMS,
+    MAX_RUNBOOKS_PER_INCIDENT,
+    MAX_SERVICE_NAME_CHARS,
+    MAX_SERVICES_PER_INCIDENT,
+    MAX_SHORT_TEXT_CHARS,
     MAX_TICKET_BODY_CHARS,
     MAX_TICKET_COMMENTS,
 )
@@ -281,7 +290,8 @@ def test_log_message_over_limit(tmp_path: Path) -> None:
         tree["incidents/INC-0001/logs.jsonl"][0]["message"] = "x" * (MAX_LOG_MESSAGE_CHARS + 1)
 
     with pytest.raises(
-        FixtureError, match=r"logs\.jsonl:1: LOG-0001-0001: message: .*at most 1000"
+        FixtureError,
+        match=rf"logs\.jsonl:1: LOG-0001-0001: message: .*at most {MAX_LOG_MESSAGE_CHARS}",
     ):
         _load(tmp_path, mutate)
 
@@ -299,7 +309,9 @@ def test_ticket_body_over_limit(tmp_path: Path) -> None:
     def mutate(tree: Tree) -> None:
         tree["incidents/INC-0001/ticket.json"]["body"] = "x" * (MAX_TICKET_BODY_CHARS + 1)
 
-    with pytest.raises(FixtureError, match=r"ticket\.json: TKT-0001: body: .*at most 4000"):
+    with pytest.raises(
+        FixtureError, match=rf"ticket\.json: TKT-0001: body: .*at most {MAX_TICKET_BODY_CHARS}"
+    ):
         _load(tmp_path, mutate)
 
 
@@ -368,3 +380,121 @@ def test_limits_are_inclusive(tmp_path: Path) -> None:
         runbook["symptoms"] = ["x" * MAX_RUNBOOK_ITEM_CHARS for _ in range(MAX_RUNBOOK_SYMPTOMS)]
 
     _load(tmp_path, mutate)
+
+
+@pytest.mark.parametrize(
+    ("rel", "path", "value", "fragment"),
+    [
+        ("incidents/INC-0001/incident.json", ("title",), "x" * (MAX_SHORT_TEXT_CHARS + 1), "title"),
+        (
+            "incidents/INC-0001/incident.json",
+            ("alert", "summary"),
+            "x" * (MAX_SHORT_TEXT_CHARS + 1),
+            "alert.summary",
+        ),
+        (
+            "incidents/INC-0001/incident.json",
+            ("alert", "metric"),
+            "x" * (MAX_SHORT_TEXT_CHARS + 1),
+            "alert.metric",
+        ),
+        (
+            "incidents/INC-0001/incident.json",
+            ("service",),
+            "s" * (MAX_SERVICE_NAME_CHARS + 1),
+            "service",
+        ),
+        ("incidents/INC-0001/ticket.json", ("title",), "x" * (MAX_SHORT_TEXT_CHARS + 1), "title"),
+        (
+            "incidents/INC-0001/ticket.json",
+            ("reporter",),
+            "x" * (MAX_SHORT_TEXT_CHARS + 1),
+            "reporter",
+        ),
+        ("runbooks/RB-TEST.json", ("title",), "x" * (MAX_SHORT_TEXT_CHARS + 1), "title"),
+    ],
+    ids=lambda v: v if isinstance(v, str) and len(v) < 40 else "",
+)
+def test_short_text_fields_are_bounded(
+    tmp_path: Path, rel: str, path: tuple[str, ...], value: str, fragment: str
+) -> None:
+    def mutate(tree: Tree) -> None:
+        node = tree[rel]
+        for key in path[:-1]:
+            node = node[key]
+        node[path[-1]] = value
+
+    with pytest.raises(FixtureError, match=rf": {re.escape(fragment)}: "):
+        _load(tmp_path, mutate)
+
+
+def test_comment_author_is_bounded(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        comment = _comment() | {"author": "x" * (MAX_SHORT_TEXT_CHARS + 1)}
+        tree["incidents/INC-0001/ticket.json"]["comments"] = [comment]
+
+    with pytest.raises(FixtureError, match=r"comments\.0\.author: "):
+        _load(tmp_path, mutate)
+
+
+def test_attribute_key_is_bounded(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["incidents/INC-0001/logs.jsonl"][0]["attributes"] = {
+            "k" * (MAX_ATTRIBUTE_KEY_CHARS + 1): 1
+        }
+
+    with pytest.raises(FixtureError, match=r"logs\.jsonl:1: LOG-0001-0001: attributes\."):
+        _load(tmp_path, mutate)
+
+
+def test_attribute_string_value_is_bounded(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["incidents/INC-0001/logs.jsonl"][0]["attributes"] = {
+            "k": "v" * (MAX_ATTRIBUTE_VALUE_CHARS + 1)
+        }
+
+    with pytest.raises(FixtureError, match=r"logs\.jsonl:1: LOG-0001-0001: attributes\.k"):
+        _load(tmp_path, mutate)
+
+
+def test_too_many_runbooks_per_incident(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        ids = [f"RB-T{i}" for i in range(MAX_RUNBOOKS_PER_INCIDENT + 1)]
+        tree["incidents/INC-0001/incident.json"]["runbook_ids"] = ids
+
+    with pytest.raises(FixtureError, match=r"incident\.json: INC-0001: runbook_ids: "):
+        _load(tmp_path, mutate)
+
+
+def test_runbook_id_is_bounded(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["runbooks/RB-TEST.json"]["id"] = "RB-" + "X" * MAX_RUNBOOK_ID_CHARS
+
+    with pytest.raises(FixtureError, match=r"RB-TEST\.json: RB-X+: id: "):
+        _load(tmp_path, mutate)
+
+
+def test_too_many_logs_per_incident(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["incidents/INC-0001/logs.jsonl"] = [
+            _log(n, "2026-01-01T00:00:00Z") for n in range(1, MAX_LOGS_PER_INCIDENT + 2)
+        ]
+
+    with pytest.raises(
+        FixtureError,
+        match=rf"logs\.jsonl:{MAX_LOGS_PER_INCIDENT + 1}: .*more than {MAX_LOGS_PER_INCIDENT}",
+    ):
+        _load(tmp_path, mutate)
+
+
+def test_too_many_services_per_incident(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["incidents/INC-0001/logs.jsonl"] = [
+            _log(n, "2026-01-01T00:00:00Z", service=f"svc-{n}")
+            for n in range(1, MAX_SERVICES_PER_INCIDENT + 2)
+        ]
+
+    with pytest.raises(
+        FixtureError, match=rf"INC-0001: {MAX_SERVICES_PER_INCIDENT + 1} distinct services"
+    ):
+        _load(tmp_path, mutate)

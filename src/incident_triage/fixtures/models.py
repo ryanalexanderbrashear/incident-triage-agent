@@ -21,33 +21,48 @@ RUNBOOK_ID_PATTERN = r"^RB-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
 IncidentId = Annotated[str, StringConstraints(pattern=INCIDENT_ID_PATTERN)]
 LogId = Annotated[str, StringConstraints(pattern=LOG_ID_PATTERN)]
 TicketId = Annotated[str, StringConstraints(pattern=TICKET_ID_PATTERN)]
-RunbookId = Annotated[str, StringConstraints(pattern=RUNBOOK_ID_PATTERN)]
+MAX_RUNBOOK_ID_CHARS = 40
+RunbookId = Annotated[
+    str, StringConstraints(pattern=RUNBOOK_ID_PATTERN, max_length=MAX_RUNBOOK_ID_CHARS)
+]
 
-NonEmptyStr = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
-
-# Size limits. Every response the server builds from fixtures is bounded because the fixtures
-# are: an oversized fixture fails at load time, naming its file and line, instead of being
-# truncated at serve time (which could silently cut an evidence ID). Set well above the seed
-# data; raise one in the PR that legitimately needs more.
+# Size limits. No fixture string or collection is unbounded, and the limits are set so that the
+# largest possible single-item response (a ticket, a runbook, an overview, one log record) fits
+# the server's response budget; tests/server/test_protocol.py builds that worst case from these
+# constants and measures it. An oversized fixture fails at load time, naming its file and line,
+# rather than being truncated at serve time (which could silently cut an evidence ID). To raise
+# one, raise it here and let the worst-case test say whether the budget still holds.
+MAX_SHORT_TEXT_CHARS = 200  # titles, alert summary and metric, reporter, comment author
+MAX_SERVICE_NAME_CHARS = 64
 MAX_LOG_MESSAGE_CHARS = 1_000
-MAX_LOG_ATTRIBUTES = 20
-MAX_TICKET_BODY_CHARS = 4_000
-MAX_TICKET_COMMENTS = 20
-MAX_COMMENT_CHARS = 2_000
+MAX_LOG_ATTRIBUTES = 10
+MAX_ATTRIBUTE_KEY_CHARS = 40
+MAX_ATTRIBUTE_VALUE_CHARS = 200
+MAX_LOGS_PER_INCIDENT = 1_000
+MAX_SERVICES_PER_INCIDENT = 20  # distinct services across an incident's logs
+MAX_RUNBOOKS_PER_INCIDENT = 10
+MAX_TICKET_BODY_CHARS = 3_000
+MAX_TICKET_COMMENTS = 8
+MAX_COMMENT_CHARS = 1_000
 MAX_RUNBOOK_SYMPTOMS = 10
 MAX_RUNBOOK_STEPS = 20
-MAX_RUNBOOK_ITEM_CHARS = 500
+MAX_RUNBOOK_ITEM_CHARS = 300
 
 
 def _bounded(max_length: int) -> StringConstraints:
     return StringConstraints(min_length=1, max_length=max_length, strip_whitespace=True)
 
 
+NonEmptyStr = Annotated[str, _bounded(MAX_SHORT_TEXT_CHARS)]
 LogMessage = Annotated[str, _bounded(MAX_LOG_MESSAGE_CHARS)]
 TicketBody = Annotated[str, _bounded(MAX_TICKET_BODY_CHARS)]
 CommentBody = Annotated[str, _bounded(MAX_COMMENT_CHARS)]
 RunbookItem = Annotated[str, _bounded(MAX_RUNBOOK_ITEM_CHARS)]
-ServiceName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]*$")]
+ServiceName = Annotated[
+    str, StringConstraints(pattern=r"^[a-z][a-z0-9-]*$", max_length=MAX_SERVICE_NAME_CHARS)
+]
+AttributeKey = Annotated[str, _bounded(MAX_ATTRIBUTE_KEY_CHARS)]
+AttributeText = Annotated[str, StringConstraints(max_length=MAX_ATTRIBUTE_VALUE_CHARS)]
 
 
 def _require_utc(value: datetime) -> datetime:
@@ -57,7 +72,7 @@ def _require_utc(value: datetime) -> datetime:
 
 
 UtcDatetime = Annotated[datetime, AfterValidator(_require_utc)]
-AttributeValue = str | int | float | bool
+AttributeValue = AttributeText | int | float | bool
 
 
 class _Fixture(BaseModel):
@@ -99,7 +114,7 @@ class Incident(_Fixture):
     service: ServiceName
     severity: Severity
     alert: Alert
-    runbook_ids: tuple[RunbookId, ...] = ()
+    runbook_ids: tuple[RunbookId, ...] = Field(default=(), max_length=MAX_RUNBOOKS_PER_INCIDENT)
 
 
 class LogRecord(_Fixture):
@@ -109,8 +124,8 @@ class LogRecord(_Fixture):
     service: ServiceName
     level: LogLevel
     message: LogMessage
-    attributes: dict[str, AttributeValue] = Field(
-        default_factory=dict[str, AttributeValue], max_length=MAX_LOG_ATTRIBUTES
+    attributes: dict[AttributeKey, AttributeValue] = Field(
+        default_factory=dict[AttributeKey, AttributeValue], max_length=MAX_LOG_ATTRIBUTES
     )
 
 

@@ -44,6 +44,13 @@ uv run incident-mcp --transport http --port 8000      # Streamable HTTP at http:
 
 A model using the tools can't read resources itself; the host or agent code reads `incident://` and gives it the overview. No match from `search_logs` is an empty result. An unknown but well-formed ID is an explicit error: an unknown incident names the known ones, and an unknown ticket or runbook points to the incident's `incident://` overview. A malformed or wrong-kind ID (`get_ticket("RB-DB-POOL")`) is rejected by the tool's schema.
 
-Every response is bounded because the fixtures are. A log message is at most 1,000 characters with 20 attributes; a ticket body at most 4,000 characters, with 20 comments of up to 2,000; a runbook at most 10 symptoms and 20 steps, each up to 500. An oversized fixture fails at load time. The limits are named constants in `src/incident_triage/fixtures/models.py`.
+Every response, including every error, fits a budget of 16,000 characters (`src/incident_triage/server/budget.py`). The SDK sends a structured result twice, as structured content and as JSON text, and the budget applies to each form.
+- **Single items fit by construction.** Every fixture string and collection has a limit (named constants in `src/incident_triage/fixtures/models.py`), set so the largest possible ticket, runbook, overview or log record is within budget. An oversized fixture fails at load time, naming its file and line.
+- **`search_logs` pages are cut between records.** A page stops at `limit`, at the end of the matches, or before the record that would pass the budget (never fewer than one), and `limited_by` says which: `"limit"`, `"end"` or `"size"`.
+- **Inputs echoed in errors are bounded too:** ID arguments have a maximum length, and unknown-argument names are clipped.
+
+`tests/server/test_protocol.py` builds the worst case (every field and count at its limit) and checks each response against the budget, in-process and over a real stdio connection.
+
+A misspelt or unknown argument is rejected with an error naming it and the expected ones (`unknown argument 'levl' for search_logs; expected: …`) instead of being silently ignored, which would return unfiltered results.
 
 Logs are JSON lines on **stderr**, never stdout (stdout is the protocol channel under stdio): one `server_started` line with the transport and fixture counts, then one `request` line per request with a fresh `request_id`, its `method`, `tool` or `uri`, `outcome` and `duration_ms`. The outcome is `ok`; `tool_error` (a tool reported an anticipated error to the model); `rejected` (the request was wrong, for example an unknown resource, logged at INFO with its `error_code`); or `raised` (a server fault, logged at ERROR). So `"outcome": "raised"` always means a bug. Invalid fixtures stop the server with exit code 2 and a `fixtures_invalid` line naming the file and line.
