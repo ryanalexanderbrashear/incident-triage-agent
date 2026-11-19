@@ -18,7 +18,14 @@ from typing import Literal, TypeVar, cast
 
 from pydantic import BaseModel, ValidationError
 
-from incident_triage.fixtures.models import Incident, LogRecord, Runbook, Ticket
+from incident_triage.fixtures.models import (
+    MAX_LOGS_PER_INCIDENT,
+    MAX_SERVICES_PER_INCIDENT,
+    Incident,
+    LogRecord,
+    Runbook,
+    Ticket,
+)
 
 FixtureKind = Literal["incident", "log", "ticket", "runbook"]
 _Model = TypeVar("_Model", bound=BaseModel)
@@ -169,10 +176,21 @@ def _load_logs(
             )
         register(record.id, "log", f"{rel}:{line_no}")
         records.append(record)
+        if len(records) > MAX_LOGS_PER_INCIDENT:
+            raise FixtureError(
+                rel, f"more than {MAX_LOGS_PER_INCIDENT} log records", line=line_no, id=record.id
+            )
     if not records:
         raise FixtureError(rel, "no log records", id=incident.id)
     if records[0].timestamp > incident.alert.fired_at:
         raise FixtureError(rel, "no log at or before the alert's fired_at", id=incident.id)
+    services = {record.service for record in records}
+    if len(services) > MAX_SERVICES_PER_INCIDENT:
+        raise FixtureError(
+            rel,
+            f"{len(services)} distinct services; at most {MAX_SERVICES_PER_INCIDENT}",
+            id=incident.id,
+        )
     return tuple(records)
 
 

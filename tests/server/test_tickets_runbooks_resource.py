@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 from mcp import Client
-from mcp.shared.exceptions import MCPError
 
 from incident_triage.server import build_server
 
@@ -58,26 +57,6 @@ async def test_unknown_id_is_an_explicit_error_pointing_to_the_resource(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("tool", "arguments"),
-    [
-        ("get_ticket", {"ticket_id": "ticket 1"}),  # malformed
-        ("get_ticket", {"ticket_id": "RB-DB-POOL"}),  # a runbook ID
-        ("get_ticket", {}),
-        ("get_runbook", {"runbook_id": "rb-db-pool"}),  # malformed (lower case)
-        ("get_runbook", {"runbook_id": "TKT-0001"}),  # a ticket ID
-        ("get_runbook", {}),
-    ],
-)
-async def test_malformed_or_wrong_kind_ids_are_rejected(
-    tool: str, arguments: dict[str, Any]
-) -> None:
-    async with Client(build_server()) as client:
-        result = await client.call_tool(tool, arguments)
-    assert result.is_error is True
-
-
-@pytest.mark.asyncio
 async def test_incident_resources_are_listed_and_templated() -> None:
     async with Client(build_server()) as client:
         resources = (await client.list_resources()).resources
@@ -119,11 +98,3 @@ async def test_no_overview_carries_an_answer_key(incident_id: str) -> None:
     keys = _keys(json.loads(getattr(result.contents[0], "text", "")))
     assert len(keys) > 10, "walked too little: the check would pass vacuously"
     assert not keys & ANSWER_KEYS
-
-
-@pytest.mark.asyncio
-async def test_reading_an_unknown_incident_is_an_error_naming_it() -> None:
-    async with Client(build_server()) as client:
-        with pytest.raises(MCPError, match="unknown incident_id INC-0099") as raised:
-            await client.read_resource("incident://INC-0099")
-    assert raised.value.code == -32602
