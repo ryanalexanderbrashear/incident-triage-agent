@@ -2,7 +2,7 @@
 
 A small Python project that shows an MCP server, a golden-dataset eval harness and Langfuse tracing working together. An agent triages synthetic incident alerts by calling a purpose-built, read-only MCP server (`incident-mcp`), and every run is scored and traced.
 
-**Status:** repository tooling, CI, the incident fixtures and the `incident-mcp` server (three tools and the `incident://` resource) are in place (issues #1–#4 and #9); the agent and evals are not built yet. See [PRODUCT.md](PRODUCT.md) for what this is and [the project plan](docs/projects/incident-triage-agent.md) for how it will be built. Progress is tracked in the GitHub issues and milestones.
+**Status:** repository tooling, CI, the incident fixtures, the `incident-mcp` server (three tools and the `incident://` resource) and the agent loop with its `triage` CLI are in place (issues #1–#5, #9, #10); tracing and the evals are not built yet. Nothing here yet measures how well the agent triages. See [PRODUCT.md](PRODUCT.md) for what this is and [the project plan](docs/projects/incident-triage-agent.md) for how it will be built. Progress is tracked in the GitHub issues and milestones.
 
 This README is replaced with real usage, architecture and results as the milestones land. It will only state numbers that a run produced.
 
@@ -54,3 +54,22 @@ Every response, including every error, fits a budget of 16,000 characters (`src/
 A misspelt or unknown argument is rejected with an error naming it and the expected ones (`unknown argument 'levl' for search_logs; expected: …`) instead of being silently ignored, which would return unfiltered results.
 
 Logs are JSON lines on **stderr**, never stdout (stdout is the protocol channel under stdio): one `server_started` line with the transport and fixture counts, then one `request` line per request with a fresh `request_id`, its `method`, `tool` or `uri`, `outcome` and `duration_ms`. The outcome is `ok`; `tool_error` (a tool reported an anticipated error to the model); `rejected` (the request was wrong, for example an unknown resource, logged at INFO with its `error_code`); or `raised` (a server fault, logged at ERROR). So `"outcome": "raised"` always means a bug. Invalid fixtures stop the server with exit code 2 and a `fixtures_invalid` line naming the file and line.
+
+## Running the agent
+
+The agent needs an Anthropic API key. Put it in `.env` (git-ignored) as `ANTHROPIC_API_KEY=…`, then:
+
+```bash
+uv run --env-file .env triage run INC-0001
+```
+
+`triage run` spawns `incident-mcp` over stdio, reads the incident's `incident://` overview, and runs a tool-use loop on `claude-opus-5-5` (effort `medium`) until the model answers. It prints one JSON run record to stdout:
+
+- **`answer`:** `root_cause_category`, `explanation` and `evidence_ids`, or `null` if there was no valid answer.
+- **`outcome`:** `answered`, `invalid_answer`, `refused`, `truncated`, `budget_exhausted`, `turn_limit` or `unexpected_stop`.
+- **`served_by`:** the model that served each turn. It differs from `model` if a refusal fell back to another model.
+- **The run's history:** every tool call and its outcome, summed token usage and the API request IDs.
+
+Logs are JSON lines on stderr. The exit code is 0 when the agent answered, 1 when the run ended without a valid answer, and 2 for a usage or configuration error such as a missing key or an unknown incident. Options: `--model`, `--effort`, `--tool-budget` (default 12) and `--turn-limit` (default 20). The request settings and the reasons for them are in [ADR-002](docs/adr/0002-agent-model-and-requests.md).
+
+The agent's tests use a scripted stand-in for the model, so CI and `uv run pytest` need no key.

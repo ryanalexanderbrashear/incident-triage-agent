@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 incident-mcp = "incident_triage.server.__main__:main"
+triage = "incident_triage.agent.cli:main"
 
 [dependency-groups]
 dev = [
@@ -52,7 +53,7 @@ pythonVersion = "3.11"
 typeCheckingMode = "standard"
 include = ["src", "tests"]
 # Strict where types are contracts (ADR-001): the fixture models now, the server and graders as they land.
-strict = ["src/incident_triage/fixtures", "src/incident_triage/server"]
+strict = ["src/incident_triage/fixtures", "src/incident_triage/server", "src/incident_triage/agent", "src/incident_triage/jsonlog.py"]
 venvPath = "."
 venv = ".venv"
 

@@ -8,18 +8,17 @@ logged while the request is handled carries it.
 
 from __future__ import annotations
 
-import json
 import logging
-import sys
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from contextvars import ContextVar
-from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
 from mcp.shared.exceptions import MCPError
 from mcp.types import INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND
+
+from incident_triage.jsonlog import json_logger
 
 LOGGER_NAME = "incident_mcp"
 
@@ -31,41 +30,13 @@ _CALLER_ERROR_CODES = frozenset({INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARA
 request_id_var: ContextVar[str | None] = ContextVar("incident_mcp_request_id", default=None)
 
 
-class _StderrHandler(logging.Handler):
-    """Writes to whatever sys.stderr is at emit time, so test capture and redirection work."""
-
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            sys.stderr.write(self.format(record) + "\n")
-            sys.stderr.flush()
-        except Exception:
-            self.handleError(record)
-
-
-class _JsonFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        payload: dict[str, Any] = {
-            "ts": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
-            "level": record.levelname,
-            "event": record.getMessage(),
-        }
-        request_id = request_id_var.get()
-        if request_id is not None:
-            payload["request_id"] = request_id
-        fields: Mapping[str, Any] = getattr(record, "fields", {})
-        payload.update(fields)
-        return json.dumps(payload, default=str)
+def _request_context() -> dict[str, Any]:
+    request_id = request_id_var.get()
+    return {} if request_id is None else {"request_id": request_id}
 
 
 def get_logger() -> logging.Logger:
-    logger = logging.getLogger(LOGGER_NAME)
-    if not any(isinstance(h, _StderrHandler) for h in logger.handlers):
-        handler = _StderrHandler()
-        handler.setFormatter(_JsonFormatter())
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-        logger.propagate = False  # the SDK configures the root logger; keep our lines ours
-    return logger
+    return json_logger(LOGGER_NAME, context=_request_context)
 
 
 def log_event(event: str, *, level: int = logging.INFO, **fields: Any) -> None:
