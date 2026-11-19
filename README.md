@@ -11,7 +11,7 @@ This README is replaced with real usage, architecture and results as the milesto
 Requires Python 3.11+ and [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-uv sync                      # create .venv and install the locked dev tools
+uv sync                      # create .venv and install the locked dependencies and dev tools
 uv run ruff check            # lint
 uv run ruff format --check   # formatting
 uv run pyright               # type check
@@ -19,3 +19,5 @@ uv run pytest                # tests
 ```
 
 CI (`.github/workflows/ci.yml`) runs each of these as its own job on every pull request and push to `main`, plus a `gitleaks` scan of the full git history. None of it needs an API key. Secrets go in `.env`, which is git-ignored.
+
+Pinned versions and the reasons for them are in [ADR-001](docs/adr/0001-stack.md). On an Intel Mac the lockfile deliberately resolves `cryptography` to an older release; the ADR explains why.

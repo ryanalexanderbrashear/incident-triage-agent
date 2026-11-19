@@ -34,14 +34,11 @@ Do not reopen these without a reason, and record any change as an ADR.
 
 These are newer major versions than most tutorials and training data cover. Verify against the official docs before writing code from memory.
 
-| Package | Version | Note |
-|---|---|---|
-| `mcp` | 2.3.0 | Server class is `mcp.server.MCPServer` (renamed from `FastMCP`). The client is `mcp.Client`, and a URL argument means Streamable HTTP. Docs: <https://py.sdk.modelcontextprotocol.io/>, including the v2 migration guide. |
-| `langfuse` | 5.2.0 | OpenTelemetry-based; needs Python 3.11 or newer. Use `get_client()` with `start_as_current_observation` or `@observe`. The old `trace()`, `span()` and `generation()` client API is deprecated. Query traces through the Observations API v2. Docs: <https://langfuse.com/docs/observability/sdk/overview>. |
-| `anthropic` | 2.11.0 | Messages API with tool use. |
-| `pytest` | 9.2.0 | With `pytest-asyncio` 1.5.0 for async tests. |
+The pinned versions, the API names verified against them, and the alternatives turned down are in **[ADR-001](adr/0001-stack.md)**, which is the authority. `tests/test_stack.py` fails if an installed version or one of those names drifts from it. To change a pin, edit the ADR, `pyproject.toml` and the test in the same PR, then run `uv lock`.
 
-Pin whatever you adopt in ADR-001, with the date you checked.
+Not covered by the ADR's check: Langfuse traces are queried through the Observations API v2.
+
+On an Intel Mac, `cryptography` resolves to 48.0.1 rather than the current release. That is deliberate; ADR-001 explains why.
 
 ## Gotchas
 
@@ -70,7 +67,9 @@ Until the keys exist, M1's issues 1 to 4 (repo tooling, ADR, fixtures, server v0
 
 ## Open questions still pending (from the plan)
 
+Question 8 (type checker) is decided: pyright, per [ADR-001](adr/0001-stack.md).
+
+
 5. Own harness or `pydantic-evals` / Langfuse's experiment runner: decide after the M2 spike.
 6. Judge model: a different Claude tier from the agent's.
 7. Trace propagation across the MCP boundary: the M3 stretch.
-8. Type checker: recommended pyright, strict on the server and graders; decide in the ADR.
