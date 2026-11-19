@@ -2,7 +2,7 @@
 
 For a Claude Code instance (or a person) picking up development. Read this, then [PRODUCT.md](../PRODUCT.md) and [the project plan](projects/incident-triage-agent.md). The plan holds the reasoning. The work itself is in the GitHub issues.
 
-**State as of 2026-11-19:** planning is finished. #1 added the `uv` project, the lint, type-check and test gates, and CI with a secret scan. #2 recorded the stack in [ADR-001](adr/0001-stack.md). #3 added the fixture models, loader and two synthetic seed incidents (`incident_triage.fixtures`). There is no server, agent or eval code yet. The repository, 3 milestones, 27 issues and 55 dependency links are in place at <https://github.com/ryanalexanderbrashear/incident-triage-agent>. Check `blocked by` for the next unblocked issue; #4 (the server) comes next and needs no API key.
+**State as of 2026-11-19:** planning is finished. #1 added the `uv` project, the lint, type-check and test gates, and CI with a secret scan. #2 recorded the stack in [ADR-001](adr/0001-stack.md). #3 added the fixture models, loader and two synthetic seed incidents (`incident_triage.fixtures`). #4 added `incident-mcp` v0 (`incident_triage.server`) with `search_logs` over stdio and Streamable HTTP, and JSON request logging on stderr. There is no agent or eval code yet. The repository, 3 milestones, 27 issues and 55 dependency links are in place at <https://github.com/ryanalexanderbrashear/incident-triage-agent>. Check `blocked by` for the next unblocked issue; #5 (the agent loop) is next and is the first issue that needs the Anthropic API key, so ask the human for it then; #9 (the other two tools) needs no key.
 
 ## What you are building
 

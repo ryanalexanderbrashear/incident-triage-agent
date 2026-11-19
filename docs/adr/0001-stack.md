@@ -31,7 +31,7 @@ Runtime packages are exact-pinned in `pyproject.toml`, and `uv.lock` pins everyt
 
 ### Type checker: pyright
 
-`standard` mode across `src` and `tests`. The MCP server and grader packages are added to pyright's `strict` list when each first lands, because those are the code whose types are contracts: tool schemas and grade results. The fixture models (`incident_triage.fixtures`, #3) were the first package added to the list, for the same reason: they are the server's data contract. This resolves the plan's open question 8.
+`standard` mode across `src` and `tests`. The MCP server and grader packages are added to pyright's `strict` list when each first lands, because those are the code whose types are contracts: tool schemas and grade results. The fixture models (`incident_triage.fixtures`, #3) were the first package added to the list, for the same reason: they are the server's data contract. The server (`incident_triage.server`, #4) was the second. This resolves the plan's open question 8.
 
 ### Architecture
 

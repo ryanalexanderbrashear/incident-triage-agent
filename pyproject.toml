@@ -13,6 +13,9 @@ dependencies = [
     "pydantic==2.14.4",
 ]
 
+[project.scripts]
+incident-mcp = "incident_triage.server.__main__:main"
+
 [dependency-groups]
 dev = [
     "pyright==1.1.414",
@@ -49,7 +52,7 @@ pythonVersion = "3.11"
 typeCheckingMode = "standard"
 include = ["src", "tests"]
 # Strict where types are contracts (ADR-001): the fixture models now, the server and graders as they land.
-strict = ["src/incident_triage/fixtures"]
+strict = ["src/incident_triage/fixtures", "src/incident_triage/server"]
 venvPath = "."
 venv = ".venv"
 
