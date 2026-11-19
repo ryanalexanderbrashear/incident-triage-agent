@@ -15,14 +15,15 @@ def _text(result: Any) -> str:
 
 
 @pytest.mark.asyncio
-async def test_lists_search_logs_as_read_only_with_output_schema() -> None:
+async def test_lists_three_read_only_tools_with_output_schemas() -> None:
     async with Client(build_server()) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
-    assert set(tools) == {"search_logs"}
+    assert set(tools) == {"search_logs", "get_ticket", "get_runbook"}
+    for tool in tools.values():
+        assert tool.annotations is not None, tool.name
+        assert tool.annotations.read_only_hint is True, tool.name
+        assert tool.output_schema is not None, tool.name
     tool = tools["search_logs"]
-    assert tool.annotations is not None
-    assert tool.annotations.read_only_hint is True
-    assert tool.output_schema is not None
     assert {"incident_id", "query", "level", "service", "limit", "offset"} <= set(
         tool.input_schema["properties"]
     )

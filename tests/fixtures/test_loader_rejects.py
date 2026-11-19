@@ -14,6 +14,16 @@ from typing import Any
 import pytest
 
 from incident_triage.fixtures import FixtureError, load_fixtures
+from incident_triage.fixtures.models import (
+    MAX_COMMENT_CHARS,
+    MAX_LOG_ATTRIBUTES,
+    MAX_LOG_MESSAGE_CHARS,
+    MAX_RUNBOOK_ITEM_CHARS,
+    MAX_RUNBOOK_STEPS,
+    MAX_RUNBOOK_SYMPTOMS,
+    MAX_TICKET_BODY_CHARS,
+    MAX_TICKET_COMMENTS,
+)
 
 Tree = dict[str, Any]
 
@@ -261,3 +271,100 @@ def test_empty_runbook_steps(tmp_path: Path) -> None:
 
     with pytest.raises(FixtureError, match=r"RB-TEST\.json: RB-TEST: steps: "):
         _load(tmp_path, mutate)
+
+
+# Size limits: every server response is bounded because the fixtures are.
+
+
+def test_log_message_over_limit(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["incidents/INC-0001/logs.jsonl"][0]["message"] = "x" * (MAX_LOG_MESSAGE_CHARS + 1)
+
+    with pytest.raises(
+        FixtureError, match=r"logs\.jsonl:1: LOG-0001-0001: message: .*at most 1000"
+    ):
+        _load(tmp_path, mutate)
+
+
+def test_too_many_log_attributes(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        attrs = {f"k{i}": i for i in range(MAX_LOG_ATTRIBUTES + 1)}
+        tree["incidents/INC-0001/logs.jsonl"][0]["attributes"] = attrs
+
+    with pytest.raises(FixtureError, match=r"logs\.jsonl:1: LOG-0001-0001: attributes: "):
+        _load(tmp_path, mutate)
+
+
+def test_ticket_body_over_limit(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["incidents/INC-0001/ticket.json"]["body"] = "x" * (MAX_TICKET_BODY_CHARS + 1)
+
+    with pytest.raises(FixtureError, match=r"ticket\.json: TKT-0001: body: .*at most 4000"):
+        _load(tmp_path, mutate)
+
+
+def _comment(body: str = "noted") -> dict[str, Any]:
+    return {"author": "on-call SRE", "created_at": "2026-01-01T00:07:00Z", "body": body}
+
+
+def test_too_many_ticket_comments(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["incidents/INC-0001/ticket.json"]["comments"] = [
+            _comment() for _ in range(MAX_TICKET_COMMENTS + 1)
+        ]
+
+    with pytest.raises(FixtureError, match=r"ticket\.json: TKT-0001: comments: "):
+        _load(tmp_path, mutate)
+
+
+def test_ticket_comment_over_limit(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["incidents/INC-0001/ticket.json"]["comments"] = [
+            _comment("x" * (MAX_COMMENT_CHARS + 1))
+        ]
+
+    with pytest.raises(FixtureError, match=r"ticket\.json: TKT-0001: comments\.0\.body: "):
+        _load(tmp_path, mutate)
+
+
+def test_too_many_runbook_steps(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["runbooks/RB-TEST.json"]["steps"] = [f"step {i}" for i in range(MAX_RUNBOOK_STEPS + 1)]
+
+    with pytest.raises(FixtureError, match=r"RB-TEST\.json: RB-TEST: steps: "):
+        _load(tmp_path, mutate)
+
+
+def test_too_many_runbook_symptoms(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["runbooks/RB-TEST.json"]["symptoms"] = [
+            f"symptom {i}" for i in range(MAX_RUNBOOK_SYMPTOMS + 1)
+        ]
+
+    with pytest.raises(FixtureError, match=r"RB-TEST\.json: RB-TEST: symptoms: "):
+        _load(tmp_path, mutate)
+
+
+def test_runbook_item_over_limit(tmp_path: Path) -> None:
+    def mutate(tree: Tree) -> None:
+        tree["runbooks/RB-TEST.json"]["steps"] = ["x" * (MAX_RUNBOOK_ITEM_CHARS + 1)]
+
+    with pytest.raises(FixtureError, match=r"RB-TEST\.json: RB-TEST: steps\.0: "):
+        _load(tmp_path, mutate)
+
+
+def test_limits_are_inclusive(tmp_path: Path) -> None:
+    """Exactly at each limit loads: the tests above fail on the limit, not below it."""
+
+    def mutate(tree: Tree) -> None:
+        log = tree["incidents/INC-0001/logs.jsonl"][0]
+        log["message"] = "x" * MAX_LOG_MESSAGE_CHARS
+        log["attributes"] = {f"k{i}": i for i in range(MAX_LOG_ATTRIBUTES)}
+        ticket = tree["incidents/INC-0001/ticket.json"]
+        ticket["body"] = "x" * MAX_TICKET_BODY_CHARS
+        ticket["comments"] = [_comment("x" * MAX_COMMENT_CHARS) for _ in range(MAX_TICKET_COMMENTS)]
+        runbook = tree["runbooks/RB-TEST.json"]
+        runbook["steps"] = ["x" * MAX_RUNBOOK_ITEM_CHARS for _ in range(MAX_RUNBOOK_STEPS)]
+        runbook["symptoms"] = ["x" * MAX_RUNBOOK_ITEM_CHARS for _ in range(MAX_RUNBOOK_SYMPTOMS)]
+
+    _load(tmp_path, mutate)

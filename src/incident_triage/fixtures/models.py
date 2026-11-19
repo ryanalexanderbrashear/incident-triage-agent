@@ -24,6 +24,29 @@ TicketId = Annotated[str, StringConstraints(pattern=TICKET_ID_PATTERN)]
 RunbookId = Annotated[str, StringConstraints(pattern=RUNBOOK_ID_PATTERN)]
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
+
+# Size limits. Every response the server builds from fixtures is bounded because the fixtures
+# are: an oversized fixture fails at load time, naming its file and line, instead of being
+# truncated at serve time (which could silently cut an evidence ID). Set well above the seed
+# data; raise one in the PR that legitimately needs more.
+MAX_LOG_MESSAGE_CHARS = 1_000
+MAX_LOG_ATTRIBUTES = 20
+MAX_TICKET_BODY_CHARS = 4_000
+MAX_TICKET_COMMENTS = 20
+MAX_COMMENT_CHARS = 2_000
+MAX_RUNBOOK_SYMPTOMS = 10
+MAX_RUNBOOK_STEPS = 20
+MAX_RUNBOOK_ITEM_CHARS = 500
+
+
+def _bounded(max_length: int) -> StringConstraints:
+    return StringConstraints(min_length=1, max_length=max_length, strip_whitespace=True)
+
+
+LogMessage = Annotated[str, _bounded(MAX_LOG_MESSAGE_CHARS)]
+TicketBody = Annotated[str, _bounded(MAX_TICKET_BODY_CHARS)]
+CommentBody = Annotated[str, _bounded(MAX_COMMENT_CHARS)]
+RunbookItem = Annotated[str, _bounded(MAX_RUNBOOK_ITEM_CHARS)]
 ServiceName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]*$")]
 
 
@@ -85,14 +108,16 @@ class LogRecord(_Fixture):
     timestamp: UtcDatetime
     service: ServiceName
     level: LogLevel
-    message: NonEmptyStr
-    attributes: dict[str, AttributeValue] = Field(default_factory=dict[str, AttributeValue])
+    message: LogMessage
+    attributes: dict[str, AttributeValue] = Field(
+        default_factory=dict[str, AttributeValue], max_length=MAX_LOG_ATTRIBUTES
+    )
 
 
 class TicketComment(_Fixture):
     author: NonEmptyStr  # a role ("on-call SRE"), never a person's name
     created_at: UtcDatetime
-    body: NonEmptyStr
+    body: CommentBody
 
 
 class Ticket(_Fixture):
@@ -102,13 +127,13 @@ class Ticket(_Fixture):
     status: TicketStatus
     created_at: UtcDatetime
     reporter: NonEmptyStr  # a role, never a person's name
-    body: NonEmptyStr
-    comments: tuple[TicketComment, ...] = ()
+    body: TicketBody
+    comments: tuple[TicketComment, ...] = Field(default=(), max_length=MAX_TICKET_COMMENTS)
 
 
 class Runbook(_Fixture):
     id: RunbookId
     title: NonEmptyStr
     service: ServiceName
-    symptoms: tuple[NonEmptyStr, ...] = Field(min_length=1)
-    steps: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    symptoms: tuple[RunbookItem, ...] = Field(min_length=1, max_length=MAX_RUNBOOK_SYMPTOMS)
+    steps: tuple[RunbookItem, ...] = Field(min_length=1, max_length=MAX_RUNBOOK_STEPS)
