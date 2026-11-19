@@ -2,7 +2,7 @@
 
 For a Claude Code instance (or a person) picking up development. Read this, then [PRODUCT.md](../PRODUCT.md) and [the project plan](projects/incident-triage-agent.md). The plan holds the reasoning. The work itself is in the GitHub issues.
 
-**State as of 2026-11-19:** planning is finished and no code exists yet. The repository, milestones, issues and dependency links are in place. The next piece of work is the first unblocked issue in milestone M1.
+**State as of 2026-11-19:** planning is finished and no code exists yet. The repository, 3 milestones, 27 issues and 55 dependency links are in place at <https://github.com/ryanalexanderbrashear/incident-triage-agent>. The only unblocked issue is #1 (repo tooling and CI), so start there. Issues 2, 3 and 4 follow, and none of them needs an API key.
 
 ## What you are building
 
@@ -49,7 +49,7 @@ Pin whatever you adopt in ADR-001, with the date you checked.
 - **Never commit or log secrets.** Keys live in `.env` (git-ignored) and in CI secrets. Do not paste them into chat, issues, traces or fixtures.
 - **Never put real data in the repo.** Logs, tickets, runbooks and names are all invented.
 - **CI must not need an API key** for the gate. It runs server tests and the deterministic graders on recorded agent outputs. Live evals are a manual workflow.
-- **Issue numbers are not item numbers.** The breakdown's draft numbers (1 to 27) do not match GitHub issue numbers. Use each issue's own `blocked by` links.
+- **Follow the `blocked by` links, not the numbering.** Issues #1 to #27 happen to match the original draft's item numbers, but only because the repository was new. New issues will not line up with anything, so never infer a dependency from a number.
 - **Cost.** Measure tokens and cost per case from the first trace (item 7) and cap eval concurrency. Spend is limited on the key, so stop and tell the human if a run hits the limit.
 - **Honest claims.** The README and docs claim only what a run produced. No number appears that a run did not generate. State limits plainly: synthetic data, a small hand-labelled calibration sample, one model family.
 

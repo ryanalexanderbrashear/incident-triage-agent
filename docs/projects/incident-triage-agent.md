@@ -1,6 +1,6 @@
 # Incident Triage Agent
 
-**Status:** Draft
+**Status:** Approved
 **Source:** user description
 **Updated:** 2026-11-19
 
@@ -122,7 +122,7 @@ Each milestone ends with an audit, scheduled as a work item: use the thing, do n
 
 ## Work items
 
-Not a table here: one ticket each in the repository's GitHub issues, with milestones as GitHub milestones and `blocked by` links for dependencies. The breakdown agreed with the author is in [the draft breakdown](incident-triage-agent.breakdown.md) and is filed once the repository exists, then the draft is deleted.
+Not a table here: one ticket each in the repository's GitHub issues, with milestones as GitHub milestones and `blocked by` links for dependencies. Filed 2026-11-19: 3 milestones, 27 issues and 55 dependency links, read back and matched against the agreed breakdown. All of them are in [the issue list](https://github.com/ryanalexanderbrashear/incident-triage-agent/issues). Milestone audits are issues 8, 19 and 26, and issue 27 is the stretch item.
 
 ## Risks and unknowns
 
