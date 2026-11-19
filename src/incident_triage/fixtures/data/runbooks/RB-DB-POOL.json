@@ -1,0 +1,17 @@
+{
+  "id": "RB-DB-POOL",
+  "title": "Database connection pool saturation",
+  "service": "checkout-api",
+  "symptoms": [
+    "Rising p99 latency with requests timing out after a fixed interval",
+    "'timed out acquiring db connection' errors",
+    "Proxy pool stats showing in_use equal to size with a growing waiting count"
+  ],
+  "steps": [
+    "Compare the pool size with the number of concurrent workers on every instance",
+    "Check recent deploys and config changes for concurrency or pool-size changes",
+    "Confirm the database itself has spare session capacity and CPU",
+    "Either reduce worker concurrency or raise the pool size within the database's session limit",
+    "Watch waiting count and p99 latency recover before closing"
+  ]
+}

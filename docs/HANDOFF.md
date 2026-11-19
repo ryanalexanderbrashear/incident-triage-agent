@@ -2,7 +2,7 @@
 
 For a Claude Code instance (or a person) picking up development. Read this, then [PRODUCT.md](../PRODUCT.md) and [the project plan](projects/incident-triage-agent.md). The plan holds the reasoning. The work itself is in the GitHub issues.
 
-**State as of 2026-11-19:** planning is finished, and #1 (repo tooling and CI) has added the `uv` project, the lint, type-check and test gates, and the CI workflow with a secret scan. No application code exists yet. The repository, 3 milestones, 27 issues and 55 dependency links are in place at <https://github.com/ryanalexanderbrashear/incident-triage-agent>. Check `blocked by` for the next unblocked issue; issues 2, 3 and 4 come next, and none of them needs an API key.
+**State as of 2026-11-19:** planning is finished. #1 added the `uv` project, the lint, type-check and test gates, and CI with a secret scan. #2 recorded the stack in [ADR-001](adr/0001-stack.md). #3 added the fixture models, loader and two synthetic seed incidents (`incident_triage.fixtures`). There is no server, agent or eval code yet. The repository, 3 milestones, 27 issues and 55 dependency links are in place at <https://github.com/ryanalexanderbrashear/incident-triage-agent>. Check `blocked by` for the next unblocked issue; #4 (the server) comes next and needs no API key.
 
 ## What you are building
 

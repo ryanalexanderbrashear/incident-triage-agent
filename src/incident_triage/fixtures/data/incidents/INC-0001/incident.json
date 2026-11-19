@@ -1,0 +1,16 @@
+{
+  "id": "INC-0001",
+  "title": "checkout-api p99 latency above SLO",
+  "service": "checkout-api",
+  "severity": "SEV2",
+  "alert": {
+    "fired_at": "2026-11-03T14:20:00Z",
+    "summary": "checkout-api p99 latency 3020 ms over the last 5 minutes (SLO 1500 ms); 503 rate rising",
+    "metric": "http_request_duration_p99_ms",
+    "threshold": 1500,
+    "observed": 3020
+  },
+  "runbook_ids": [
+    "RB-DB-POOL"
+  ]
+}

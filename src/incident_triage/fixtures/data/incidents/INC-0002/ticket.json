@@ -1,0 +1,10 @@
+{
+  "id": "TKT-0002",
+  "incident_id": "INC-0002",
+  "title": "Merchant payouts not arriving",
+  "status": "open",
+  "created_at": "2026-11-12T00:15:00Z",
+  "reporter": "finance operations analyst",
+  "body": "Overnight payout reconciliation shows no settlements confirmed since just after midnight UTC. Refunds look normal. Nothing changed on our side.",
+  "comments": []
+}

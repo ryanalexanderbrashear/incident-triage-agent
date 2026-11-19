@@ -12,6 +12,7 @@ ADR_001_PINS = {
     "anthropic": "2.11.0",
     "langfuse": "5.2.0",
     "mcp": "2.3.0",
+    "pydantic": "2.14.4",
 }
 
 

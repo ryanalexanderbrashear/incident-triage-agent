@@ -1,0 +1,16 @@
+{
+  "id": "RB-TLS-CERT",
+  "title": "Upstream TLS certificate failures",
+  "service": "payments-worker",
+  "symptoms": [
+    "TLS handshake errors calling an upstream that was previously healthy",
+    "Failures start abruptly, often at a round time such as midnight UTC",
+    "Retries fail identically and work moves to a dead-letter queue"
+  ],
+  "steps": [
+    "Read the peer certificate's validity window from the client's debug logs or with a TLS client",
+    "Check the certificate renewal job's recent runs for the affected host",
+    "Renew or re-issue the certificate and deploy it to the upstream",
+    "Replay the dead-letter queue once handshakes succeed"
+  ]
+}

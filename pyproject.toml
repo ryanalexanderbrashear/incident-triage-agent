@@ -10,6 +10,7 @@ dependencies = [
     "anthropic==2.11.0",
     "langfuse==5.2.0",
     "mcp==2.3.0",
+    "pydantic==2.14.4",
 ]
 
 [dependency-groups]
@@ -47,6 +48,8 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 pythonVersion = "3.11"
 typeCheckingMode = "standard"
 include = ["src", "tests"]
+# Strict where types are contracts (ADR-001): the fixture models now, the server and graders as they land.
+strict = ["src/incident_triage/fixtures"]
 venvPath = "."
 venv = ".venv"
 

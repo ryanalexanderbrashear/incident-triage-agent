@@ -19,18 +19,19 @@ The project shows an MCP server, a golden-dataset eval harness and Langfuse trac
 | `mcp` | 2.3.0 | server and client | Server class `mcp.server.MCPServer` (renamed from `FastMCP`); client `mcp.Client`, where a URL argument means Streamable HTTP. [Docs](https://py.sdk.modelcontextprotocol.io/). |
 | `langfuse` | 5.2.0 | tracing, datasets, scores | OpenTelemetry-based. Use `get_client()` with `start_as_current_observation` or `@observe`; the v2 `trace()` / `span()` / `generation()` API is gone. [Docs](https://langfuse.com/docs/observability/sdk/overview). |
 | `anthropic` | 2.11.0 | model calls | Messages API with tool use. |
+| `pydantic` | 2.14.4 | fixture and data models | v2 API (`model_validate`, `ConfigDict`). Already pulled in by `mcp` and `langfuse`; pinned directly from #3 because the fixture models import it. |
 | `pytest` | 9.2.0 | tests | |
 | `pytest-asyncio` | 1.5.0 | async tests | |
 | `ruff` | 0.17.6 | lint + format | |
 | `pyright` | 1.1.414 | type checker | See below. |
 
-Runtime packages are exact-pinned in `pyproject.toml`, and `uv.lock` pins everything transitively. [`tests/test_stack.py`](../../tests/test_stack.py) asserts the three SDK versions match this table, and that the API names above exist. On 2026-11-19, all of them were verified by installing this set on Python 3.11 and importing them.
+Runtime packages are exact-pinned in `pyproject.toml`, and `uv.lock` pins everything transitively. [`tests/test_stack.py`](../../tests/test_stack.py) asserts the runtime pins match this table, and that the API names above exist. On 2026-11-19, all of them were verified by installing this set on Python 3.11 and importing them.
 
 **Changing a pin:** edit this table, `pyproject.toml` and `tests/test_stack.py`, then run `uv lock`, all in the same pull request.
 
 ### Type checker: pyright
 
-`standard` mode across `src` and `tests`. The MCP server and grader packages are added to pyright's `strict` list when each first lands, because those are the code whose types are contracts: tool schemas and grade results. This resolves the plan's open question 8.
+`standard` mode across `src` and `tests`. The MCP server and grader packages are added to pyright's `strict` list when each first lands, because those are the code whose types are contracts: tool schemas and grade results. The fixture models (`incident_triage.fixtures`, #3) were the first package added to the list, for the same reason: they are the server's data contract. This resolves the plan's open question 8.
 
 ### Architecture
 
