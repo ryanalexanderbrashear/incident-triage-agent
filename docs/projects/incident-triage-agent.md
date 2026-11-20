@@ -148,7 +148,7 @@ Not a table here: one ticket each in the repository's GitHub issues, with milest
 **Can wait**
 
 5. **Own harness or `pydantic-evals` / Langfuse's experiment runner?** Recommend a time-boxed 1-hour spike early in M2 and the thin own harness unless the spike shows a clear win.
-6. **Judge model.** Recommend a different Claude tier from the agent's, to reduce self-agreement. Decide in M3.
+6. **Judge model.** Recommend a different Claude tier from the agent's, to reduce self-agreement. Decide in M3. The agent runs on `claude-opus-5-5` ([ADR-002](../adr/0002-agent-model-and-requests.md)), so the judge would be, for example, `claude-sonnet-5-5`.
 7. **Trace propagation across MCP.** Recommend leaving it as the M3 stretch.
 8. **Type checker.** *Decided 2026-11-19:* pyright, `standard` repo-wide and strict on the server and graders as they land. See [ADR-001](../adr/0001-stack.md).
 
