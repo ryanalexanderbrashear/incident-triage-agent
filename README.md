@@ -18,7 +18,15 @@ uv run pyright               # type check
 uv run pytest                # tests
 ```
 
-CI (`.github/workflows/ci.yml`) runs each of these as its own job on every pull request and push to `main`, plus a `gitleaks` scan of the full git history. None of it needs an API key. Secrets go in `.env`, which is git-ignored.
+CI (`.github/workflows/ci.yml`) runs each of these as its own job on every pull request and push to `main`, plus a `gitleaks` scan of the full git history. None of it needs an API key.
+
+For live runs, copy the template and fill it in:
+
+```bash
+cp .env.example .env
+```
+
+`.env` is git-ignored. `ANTHROPIC_API_KEY` is required for `triage run`. The three `LANGFUSE_*` variables are optional but all-or-nothing: set all three for tracing, or none. `LANGFUSE_BASE_URL` must be the URL of the region that issued the keys. The template's comments say which.
 
 Pinned versions and the reasons for them are in [ADR-001](docs/adr/0001-stack.md). On an Intel Mac the lockfile deliberately resolves `cryptography` to an older release; the ADR explains why.
 
@@ -57,7 +65,7 @@ Logs are JSON lines on **stderr**, never stdout (stdout is the protocol channel 
 
 ## Running the agent
 
-The agent needs an Anthropic API key. Put it in `.env` (git-ignored) as `ANTHROPIC_API_KEY=…`, then:
+The agent needs an Anthropic API key. Put it in `.env` (git-ignored; see *Development* for `.env.example`) as `ANTHROPIC_API_KEY=…`, then:
 
 ```bash
 uv run --env-file .env triage run INC-0001
@@ -76,7 +84,7 @@ The agent's tests use a scripted stand-in for the model, so CI and `uv run pytes
 
 ## Tracing
 
-With Langfuse keys in `.env` (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`), every `triage run` is one Langfuse trace. The run record's `trace_id` names it, and a `trace` line on stderr gives the ID and, when Langfuse can look it up, a link.
+With Langfuse keys in `.env` (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`, as listed in `.env.example`), every `triage run` is one Langfuse trace. The run record's `trace_id` names it, and a `trace` line on stderr gives the ID and, when Langfuse can look it up, a link.
 
 | Observation | Type | Holds |
 |---|---|---|
