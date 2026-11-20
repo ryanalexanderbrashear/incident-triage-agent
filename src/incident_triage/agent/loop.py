@@ -12,6 +12,7 @@ import logging
 import time
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
+from decimal import Decimal
 from typing import Any, Literal, Protocol
 
 from anthropic.types.beta import BetaMessage, BetaMessageParam, BetaToolResultBlockParam
@@ -22,6 +23,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from incident_triage.agent.answer import ANSWER_SCHEMA, TriageAnswer
 from incident_triage.agent.bridge import error_result, to_anthropic_tool, to_tool_result
+from incident_triage.agent.pricing import VERIFIED as PRICES_VERIFIED
+from incident_triage.agent.pricing import turn_cost
 from incident_triage.agent.prompts import SYSTEM_PROMPT, first_user_message
 from incident_triage.agent.tracing import trace_attributes
 from incident_triage.jsonlog import json_logger
@@ -67,6 +70,22 @@ class ToolCallRecord(BaseModel):
     duration_ms: float
 
 
+class TurnRecord(BaseModel):
+    """One Messages API call, in the API's own usage semantics. Priced at its serving model."""
+
+    model_config = ConfigDict(frozen=True)
+
+    turn: int
+    served_by: str
+    stop_reason: str | None
+    request_id: str | None
+    input_tokens: int
+    output_tokens: int
+    cache_creation_input_tokens: int
+    cache_read_input_tokens: int
+    cost_usd: float | None  # None when served_by is not in the price table
+
+
 class TokenUsage(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
@@ -99,6 +118,9 @@ class RunRecord(BaseModel):
     request_ids: list[str] = Field(default_factory=list[str])
     git_sha: str = "unknown"
     trace_id: str | None = None  # null when the run was not traced
+    turn_records: list[TurnRecord] = Field(default_factory=list[TurnRecord])
+    cost_usd: float | None = None  # sum of turn costs; None if any turn could not be priced
+    prices_verified: str = PRICES_VERIFIED
 
 
 def request_params(
@@ -148,7 +170,7 @@ async def run_triage(
         incident_id=incident_id, outcome="turn_limit", model=model, effort=effort, git_sha=git_sha
     )
     if langfuse is None:
-        return await _run(record, mcp, messages_api, tool_budget, turn_limit, None)
+        return _priced(await _run(record, mcp, messages_api, tool_budget, turn_limit, None))
     attributes = trace_attributes(
         incident_id=incident_id,
         model=model,
@@ -164,7 +186,7 @@ async def run_triage(
         ) as root,
     ):
         record.trace_id = langfuse.get_current_trace_id()
-        await _run(record, mcp, messages_api, tool_budget, turn_limit, langfuse)
+        _priced(await _run(record, mcp, messages_api, tool_budget, turn_limit, langfuse))
         answered = record.outcome == "answered"
         root.update(
             output=record.answer.model_dump(mode="json")
@@ -180,8 +202,54 @@ async def run_triage(
                 "tool_calls": len(record.tool_calls),
                 "served_by": sorted(set(record.served_by)),
                 "usage": record.usage.model_dump(),
+                "cost_usd": record.cost_usd,
             },
         )
+    return record
+
+
+def _turn_record(turn: int, response: BetaMessage, request_id: object) -> TurnRecord:
+    usage = response.usage
+    counts = {
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "cache_creation_input_tokens": usage.cache_creation_input_tokens or 0,
+        "cache_read_input_tokens": usage.cache_read_input_tokens or 0,
+    }
+    cost = turn_cost(model=response.model, **counts)
+    return TurnRecord(
+        turn=turn,
+        served_by=response.model,
+        stop_reason=response.stop_reason,
+        request_id=request_id if isinstance(request_id, str) else None,
+        cost_usd=None if cost is None else float(round(cost, 6)),
+        **counts,
+    )
+
+
+def _priced(record: RunRecord) -> RunRecord:
+    """Sum the turns' costs. One unpriced turn makes the run's cost unknown, never a guess."""
+    unpriced = sorted({t.served_by for t in record.turn_records if t.cost_usd is None})
+    if unpriced:
+        record.cost_usd = None
+        note = f"cost unknown: no price for {', '.join(unpriced)}"
+        record.detail = f"{record.detail}; {note}" if record.detail else note
+    else:
+        exact = sum(
+            (
+                turn_cost(
+                    model=t.served_by,
+                    input_tokens=t.input_tokens,
+                    output_tokens=t.output_tokens,
+                    cache_creation_input_tokens=t.cache_creation_input_tokens,
+                    cache_read_input_tokens=t.cache_read_input_tokens,
+                )
+                or Decimal(0)
+                for t in record.turn_records
+            ),
+            Decimal(0),
+        )
+        record.cost_usd = float(round(exact, 6))
     return record
 
 
@@ -270,6 +338,7 @@ async def _run(
         request_id = getattr(response, "_request_id", None)
         if isinstance(request_id, str):
             record.request_ids.append(request_id)
+        record.turn_records.append(_turn_record(turn, response, request_id))
         log_event(
             "turn",
             incident_id=incident_id,

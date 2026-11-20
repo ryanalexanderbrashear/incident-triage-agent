@@ -21,6 +21,7 @@ from langfuse import Langfuse
 from mcp import Client, StdioServerParameters
 from mcp.shared.exceptions import MCPError
 
+from incident_triage.agent.export import ExportError, ObservationsAPI, export_trace
 from incident_triage.agent.loop import (
     DEFAULT_EFFORT,
     DEFAULT_MODEL,
@@ -78,7 +79,45 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--effort", choices=get_args(Effort), default=DEFAULT_EFFORT)
     run.add_argument("--tool-budget", type=int, default=DEFAULT_TOOL_BUDGET)
     run.add_argument("--turn-limit", type=int, default=DEFAULT_TURN_LIMIT)
+    trace = commands.add_parser("trace", help="Work with Langfuse traces.")
+    trace_commands = trace.add_subparsers(dest="trace_command", required=True)
+    export = trace_commands.add_parser(
+        "export", help="Export one trace as clean JSON (SDK metadata stripped, keys redacted)."
+    )
+    export.add_argument("trace_id", help="32 hex characters, as printed by `triage run`")
+    export.add_argument("--out", help="File to write (default: stdout)")
     return parser
+
+
+def _export(args: argparse.Namespace, observations_api: ObservationsAPI | None) -> int:
+    if re.fullmatch(r"[0-9a-f]{32}", args.trace_id) is None:
+        sys.stderr.write(f"triage: {args.trace_id!r} is not a trace ID (32 hex characters)\n")
+        return 2
+    client: Langfuse | None = None
+    if observations_api is None:
+        client = make_langfuse()
+        if client is None:
+            sys.stderr.write(
+                "triage: exporting a trace needs LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY and "
+                "LANGFUSE_BASE_URL; run with `uv run --env-file .env triage trace export …`\n"
+            )
+            return 2
+        observations_api = client.api.observations
+    try:
+        text = export_trace(observations_api, args.trace_id)
+    except ExportError as exc:
+        sys.stderr.write(f"triage: {exc}\n")
+        return 1
+    finally:
+        if client is not None:
+            client.shutdown()
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as out:
+            out.write(text)
+        log_event("trace_exported", trace_id=args.trace_id, path=args.out, chars=len(text))
+    else:
+        sys.stdout.write(text)
+    return 0
 
 
 async def _run(
@@ -147,13 +186,16 @@ def main(
     messages_api: MessagesAPI | None = None,
     server: object | None = None,
     langfuse_factory: Callable[[], Langfuse | None] = make_langfuse,
+    observations_api: ObservationsAPI | None = None,
 ) -> int:
-    """`messages_api`, `server` and `langfuse_factory` are injectable for tests.
+    """`messages_api`, `server`, `langfuse_factory` and `observations_api` are injectable for tests.
 
     By default: the real Messages API, incident-mcp spawned over stdio, and Langfuse from the
     environment (an untraced run if its keys are missing).
     """
     args = _parser().parse_args(argv)
+    if args.command == "trace":
+        return _export(args, observations_api)
     if re.fullmatch(INCIDENT_ID_PATTERN, args.incident_id) is None:
         sys.stderr.write(f"triage: {args.incident_id!r} is not an incident ID like INC-0001\n")
         return 2

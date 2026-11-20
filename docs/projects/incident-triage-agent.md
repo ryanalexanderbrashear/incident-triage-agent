@@ -56,7 +56,7 @@ Greenfield. There is no code to read, so what follows was checked against packag
 
 1. Whether a synthetic golden set can be made hard enough to discriminate. If the agent scores 100% or 0% on day one, the project proves nothing.
 2. How trace context should cross the MCP boundary, so the server's work appears under the agent's trace. Unverified, and treated as a stretch.
-3. Real cost per eval run, which depends on tokens per case. Unmeasured until M1.
+3. Real cost per eval run, which depends on tokens per case. *Measured 2026-11-20 (#7, [docs/cost.md](../cost.md)):* $0.025–$0.061 per run of the two seed incidents (3 turns each), the spread coming from the prompt cache. Harder golden cases are still unmeasured.
 4. Whether the free Langfuse tier and its retention suffice. Unverified.
 
 ## Approach
@@ -160,7 +160,7 @@ Added 2026-11-19: a fourth milestone and seven issues, with 14 more dependency l
 **Block starting M1**
 
 1. **Repository.** Create public `incident-triage-agent` under the author's GitHub account? Recommend yes, with an MIT licence. Creating it is outward-facing, so it waits for an explicit go-ahead.
-2. **Anthropic key and spend limit.** Recommend a dedicated key with a monthly limit set in the console (for example $20), then adjust after measuring real cost in M1.
+2. **Anthropic key and spend limit.** Recommend a dedicated key with a monthly limit set in the console (for example $20), then adjust after measuring real cost in M1. *M1 measured $0.025–$0.061 per seed-incident run ([docs/cost.md](../cost.md)); a 25-case golden set at 3 runs per case is about 75 runs, but harder cases may cost more.*
 3. **Langfuse project.** Recommend a Langfuse Cloud project in the region nearest the author, with keys in `.env` and CI secrets. Confirm the free tier before relying on it.
 4. **Tooling.** Recommend installing `uv` for the lockfile and reproducible runs. The fallback is `venv` and `pip`, which works but loses the lockfile.
 

@@ -1,0 +1,125 @@
+{
+  "incident_id": "INC-0001",
+  "outcome": "answered",
+  "answer": {
+    "root_cause_category": "config_or_deploy_change",
+    "explanation": "At 14:01 the deploy of checkout-api 2026.11.3 raised WORKER_CONCURRENCY from 8 to 32 (LOG-0001-0006, LOG-0001-0007). The orders-db client pool stayed at 20 connections (LOG-0001-0008). Before the deploy the pool was using 6 of 20 connections with nothing waiting (LOG-0001-0003). Right after it, usage climbed to 17 with requests queuing (LOG-0001-0013), then the pool filled completely and the queue kept growing (LOG-0001-0016, LOG-0001-0038). Connection acquires started timing out after 3 s and requests failed with 503s (LOG-0001-0023, LOG-0001-0024), which is the latency breach the alert fired on (LOG-0001-0036). The database itself was fine: 20 of 200 sessions in use and 23% CPU (LOG-0001-0025). All six instances stayed healthy, and the session-cache miss spike was just cache warming that recovered by 14:04:58 (LOG-0001-0014), so neither caused this. I didn't check the RB-DB-POOL runbook. Rolling back the concurrency change, or sizing the pool to match it, should end the incident.",
+    "evidence_ids": [
+      "LOG-0001-0006",
+      "LOG-0001-0007",
+      "LOG-0001-0008",
+      "LOG-0001-0003",
+      "LOG-0001-0013",
+      "LOG-0001-0016",
+      "LOG-0001-0023",
+      "LOG-0001-0024",
+      "LOG-0001-0025",
+      "LOG-0001-0014",
+      "LOG-0001-0036"
+    ]
+  },
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "served_by": [
+    "claude-opus-5-5",
+    "claude-opus-5-5",
+    "claude-opus-5-5"
+  ],
+  "turns": 3,
+  "tool_calls": [
+    {
+      "turn": 1,
+      "name": "search_logs",
+      "arguments": {
+        "incident_id": "INC-0001",
+        "level": "WARN",
+        "limit": 50
+      },
+      "outcome": "ok",
+      "duration_ms": 69.8
+    },
+    {
+      "turn": 1,
+      "name": "search_logs",
+      "arguments": {
+        "incident_id": "INC-0001",
+        "service": "deployer"
+      },
+      "outcome": "ok",
+      "duration_ms": 4.4
+    },
+    {
+      "turn": 1,
+      "name": "get_ticket",
+      "arguments": {
+        "ticket_id": "TKT-0001"
+      },
+      "outcome": "ok",
+      "duration_ms": 9.9
+    },
+    {
+      "turn": 2,
+      "name": "search_logs",
+      "arguments": {
+        "incident_id": "INC-0001",
+        "level": "INFO",
+        "limit": 25
+      },
+      "outcome": "ok",
+      "duration_ms": 11.1
+    }
+  ],
+  "stop_reason": "end_turn",
+  "refusal_category": null,
+  "detail": null,
+  "usage": {
+    "input_tokens": 8,
+    "output_tokens": 974,
+    "cache_creation_input_tokens": 5848,
+    "cache_read_input_tokens": 10192
+  },
+  "request_ids": [
+    "req_011ChDJft8Ry66pLYGcLqcBN",
+    "req_011ChDJg4ZFHkmTBLHoJzKd7",
+    "req_011ChDJgHTPFA4ao7t6Eaq4F"
+  ],
+  "git_sha": "4096ee8b86e58fb39a73171fca84c3a7179f5f32-dirty",
+  "trace_id": "4f0c4d639e1be2b0123a9e0406f5f4f3",
+  "turn_records": [
+    {
+      "turn": 1,
+      "served_by": "claude-opus-5-5",
+      "stop_reason": "tool_use",
+      "request_id": "req_011ChDJft8Ry66pLYGcLqcBN",
+      "input_tokens": 4,
+      "output_tokens": 230,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2398,
+      "cost_usd": 0.005096
+    },
+    {
+      "turn": 2,
+      "served_by": "claude-opus-5-5",
+      "stop_reason": "tool_use",
+      "request_id": "req_011ChDJg4ZFHkmTBLHoJzKd7",
+      "input_tokens": 2,
+      "output_tokens": 182,
+      "cache_creation_input_tokens": 2998,
+      "cache_read_input_tokens": 2398,
+      "cost_usd": 0.019118
+    },
+    {
+      "turn": 3,
+      "served_by": "claude-opus-5-5",
+      "stop_reason": "end_turn",
+      "request_id": "req_011ChDJgHTPFA4ao7t6Eaq4F",
+      "input_tokens": 2,
+      "output_tokens": 562,
+      "cache_creation_input_tokens": 2850,
+      "cache_read_input_tokens": 5396,
+      "cost_usd": 0.026577
+    }
+  ],
+  "cost_usd": 0.05079,
+  "prices_verified": "2026-11-20"
+}
