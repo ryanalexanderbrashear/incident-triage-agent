@@ -8,13 +8,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import os
 import re
 import sys
+from collections.abc import Callable
 from typing import Any, cast, get_args
 
 from anthropic import AsyncAnthropic
 from anthropic.types.beta import BetaMessage
+from langfuse import Langfuse
 from mcp import Client, StdioServerParameters
 from mcp.shared.exceptions import MCPError
 
@@ -29,6 +32,7 @@ from incident_triage.agent.loop import (
     log_event,
     run_triage,
 )
+from incident_triage.agent.tracing import git_sha, make_langfuse, trace_url
 from incident_triage.fixtures.models import INCIDENT_ID_PATTERN
 
 CREDENTIAL_VARIABLES = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
@@ -52,6 +56,15 @@ class AnthropicMessages:
         return response
 
 
+def make_anthropic(**options: Any) -> AsyncAnthropic:
+    """The Anthropic client, with the SDK's own OpenTelemetry spans off.
+
+    The loop records each call as a Langfuse generation; the SDK's span would sit under it with
+    token counts that include cache reads, duplicating and contradicting it (ADR-002, Tracing).
+    """
+    return AsyncAnthropic(open_telemetry=False, **options)
+
+
 def _server() -> StdioServerParameters:
     return StdioServerParameters(command=sys.executable, args=["-m", "incident_triage.server"])
 
@@ -68,9 +81,20 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def _run(args: argparse.Namespace, messages_api: MessagesAPI, server: object) -> int:
+async def _run(
+    args: argparse.Namespace,
+    messages_api: MessagesAPI,
+    server: object,
+    langfuse: Langfuse | None,
+) -> int:
     record: RunRecord | None = None
     failure: str | None = None
+    if langfuse is None:
+        log_event(
+            "tracing_disabled",
+            level=logging.WARNING,
+            reason="LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are not both set",
+        )
     # The MCP client runs in a task group, so an error raised inside it can arrive wrapped in an
     # ExceptionGroup; except* matches it either way (and cannot itself contain a return).
     try:
@@ -83,13 +107,22 @@ async def _run(args: argparse.Namespace, messages_api: MessagesAPI, server: obje
                 effort=args.effort,
                 tool_budget=args.tool_budget,
                 turn_limit=args.turn_limit,
+                langfuse=langfuse,
+                git_sha=git_sha(),
             )
     except* MCPError as group:
         failure = _first_mcp_error(group).message
+    finally:
+        # A short-lived process: export the trace before exiting, whatever happened above.
+        if langfuse is not None:
+            langfuse.flush()
     if record is None:
         sys.stderr.write(f"triage: {failure}\n")
         return 2
     sys.stdout.write(record.model_dump_json(indent=2) + "\n")
+    if langfuse is not None and record.trace_id is not None:
+        url = trace_url(langfuse, record.trace_id, log=log_event)
+        log_event("trace", trace_id=record.trace_id, url=url)
     log_event("run_finished", incident_id=args.incident_id, outcome=record.outcome)
     return 0 if record.outcome == "answered" else 1
 
@@ -113,10 +146,12 @@ def main(
     *,
     messages_api: MessagesAPI | None = None,
     server: object | None = None,
+    langfuse_factory: Callable[[], Langfuse | None] = make_langfuse,
 ) -> int:
-    """`messages_api` and `server` are injectable for tests.
+    """`messages_api`, `server` and `langfuse_factory` are injectable for tests.
 
-    By default: the real Messages API and incident-mcp spawned over stdio.
+    By default: the real Messages API, incident-mcp spawned over stdio, and Langfuse from the
+    environment (an untraced run if its keys are missing).
     """
     args = _parser().parse_args(argv)
     if re.fullmatch(INCIDENT_ID_PATTERN, args.incident_id) is None:
@@ -129,8 +164,15 @@ def main(
         if not any(os.environ.get(name) for name in CREDENTIAL_VARIABLES):
             sys.stderr.write(NO_KEY_MESSAGE + "\n")
             return 2
-        messages_api = AnthropicMessages(AsyncAnthropic())
-    return asyncio.run(_run(args, messages_api, server if server is not None else _server()))
+        messages_api = AnthropicMessages(make_anthropic())
+    langfuse = langfuse_factory()
+    try:
+        return asyncio.run(
+            _run(args, messages_api, server if server is not None else _server(), langfuse)
+        )
+    finally:
+        if langfuse is not None:
+            langfuse.shutdown()
 
 
 if __name__ == "__main__":

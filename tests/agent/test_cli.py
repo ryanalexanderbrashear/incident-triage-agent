@@ -78,3 +78,55 @@ def test_the_default_path_spawns_incident_mcp_over_stdio(
     }
     result = script.requests[1]["messages"][-1]["content"][0]
     assert '"title":"Merchant payouts not arriving"' in result["content"]
+
+
+def test_a_traced_run_prints_its_trace_id_and_exports_before_exiting(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import uuid
+
+    from langfuse import Langfuse
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    exporter = InMemorySpanExporter()
+    client = Langfuse(
+        public_key=f"pk-lf-test-{uuid.uuid4().hex}",
+        secret_key="sk-lf-test-not-a-real-key",
+        base_url="http://127.0.0.1:9",
+        span_exporter=exporter,
+        tracer_provider=TracerProvider(),
+    )
+    script = ScriptedMessages(
+        message([answer_text("expired_credential", "Cert expired.", ["TKT-0002"])], "end_turn")
+    )
+    code = cli.main(
+        ["run", "INC-0002"],
+        messages_api=script,
+        server=build_server(),
+        langfuse_factory=lambda: client,
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    trace_id = json.loads(captured.out)["trace_id"]
+    assert trace_id and len(trace_id) == 32
+    # Exported by the CLI itself before main() returned: this test never flushes.
+    exported: set[str] = set()
+    for span in exporter.get_finished_spans():
+        assert span.context is not None
+        exported.add(format(span.context.trace_id, "032x"))
+    assert exported == {trace_id}
+    events = [json.loads(line) for line in captured.err.splitlines() if line.startswith("{")]
+    assert any(e.get("event") == "trace" and e.get("trace_id") == trace_id for e in events)
+
+
+def test_without_langfuse_keys_the_run_is_untraced_and_says_so(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    script = ScriptedMessages(
+        message([answer_text("expired_credential", "Cert expired.", ["TKT-0002"])], "end_turn")
+    )
+    assert cli.main(["run", "INC-0002"], messages_api=script, server=build_server()) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["trace_id"] is None
+    assert '"event": "tracing_disabled"' in captured.err

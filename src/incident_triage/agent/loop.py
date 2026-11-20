@@ -10,10 +10,12 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
+from contextlib import contextmanager
 from typing import Any, Literal, Protocol
 
 from anthropic.types.beta import BetaMessage, BetaMessageParam, BetaToolResultBlockParam
+from langfuse import Langfuse, propagate_attributes
 from mcp import Client
 from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -21,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from incident_triage.agent.answer import ANSWER_SCHEMA, TriageAnswer
 from incident_triage.agent.bridge import error_result, to_anthropic_tool, to_tool_result
 from incident_triage.agent.prompts import SYSTEM_PROMPT, first_user_message
+from incident_triage.agent.tracing import trace_attributes
 from incident_triage.jsonlog import json_logger
 
 DEFAULT_MODEL = "claude-opus-5-5"
@@ -94,6 +97,8 @@ class RunRecord(BaseModel):
     detail: str | None = None
     usage: TokenUsage = Field(default_factory=TokenUsage)
     request_ids: list[str] = Field(default_factory=list[str])
+    git_sha: str = "unknown"
+    trace_id: str | None = None  # null when the run was not traced
 
 
 def request_params(
@@ -130,12 +135,95 @@ async def run_triage(
     effort: Effort = DEFAULT_EFFORT,
     tool_budget: int = DEFAULT_TOOL_BUDGET,
     turn_limit: int = DEFAULT_TURN_LIMIT,
+    langfuse: Langfuse | None = None,
+    git_sha: str = "unknown",
 ) -> RunRecord:
-    """Triage one incident. Raises MCPError only if the incident's overview can't be read."""
-    record = RunRecord(incident_id=incident_id, outcome="turn_limit", model=model, effort=effort)
+    """Triage one incident. Raises MCPError only if the incident's overview can't be read.
+
+    With a Langfuse client, the run is one trace: an `agent` observation holding one
+    `generation` per Messages API call and one `tool` observation per tool call. Without one,
+    the run is untraced and otherwise identical.
+    """
+    record = RunRecord(
+        incident_id=incident_id, outcome="turn_limit", model=model, effort=effort, git_sha=git_sha
+    )
+    if langfuse is None:
+        return await _run(record, mcp, messages_api, tool_budget, turn_limit, None)
+    attributes = trace_attributes(
+        incident_id=incident_id,
+        model=model,
+        effort=effort,
+        git=git_sha,
+        tool_budget=tool_budget,
+        turn_limit=turn_limit,
+    )
+    with (
+        propagate_attributes(**attributes),
+        langfuse.start_as_current_observation(
+            name=f"triage {incident_id}", as_type="agent"
+        ) as root,
+    ):
+        record.trace_id = langfuse.get_current_trace_id()
+        await _run(record, mcp, messages_api, tool_budget, turn_limit, langfuse)
+        answered = record.outcome == "answered"
+        root.update(
+            output=record.answer.model_dump(mode="json")
+            if record.answer is not None
+            else {"outcome": record.outcome, "detail": record.detail},
+            level="DEFAULT" if answered else "ERROR",
+            status_message=None
+            if answered
+            else f"{record.outcome}: {record.detail or ''}".strip(": "),
+            metadata={
+                "outcome": record.outcome,
+                "turns": record.turns,
+                "tool_calls": len(record.tool_calls),
+                "served_by": sorted(set(record.served_by)),
+                "usage": record.usage.model_dump(),
+            },
+        )
+    return record
+
+
+@contextmanager
+def _observe(langfuse: Langfuse | None, **kwargs: Any) -> Generator[Any]:
+    """An observation when tracing, nothing otherwise. Yields the observation or None."""
+    if langfuse is None:
+        yield None
+        return
+    # start_as_current_observation is overloaded on as_type; with **kwargs no overload is chosen.
+    observation: Any
+    with langfuse.start_as_current_observation(**kwargs) as observation:  # pyright: ignore[reportUnknownVariableType]
+        yield observation
+
+
+def _plain(value: Any) -> Any:
+    """JSON-ready copy of SDK objects (content blocks are Pydantic models) for trace payloads."""
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json", exclude_none=True)
+    if isinstance(value, dict):
+        mapping: dict[Any, Any] = value  # pyright: ignore[reportUnknownVariableType]
+        return {str(k): _plain(v) for k, v in mapping.items()}
+    if isinstance(value, list | tuple):
+        items: list[Any] | tuple[Any, ...] = value  # pyright: ignore[reportUnknownVariableType]
+        return [_plain(v) for v in items]
+    return value
+
+
+async def _run(
+    record: RunRecord,
+    mcp: Client,
+    messages_api: MessagesAPI,
+    tool_budget: int,
+    turn_limit: int,
+    langfuse: Langfuse | None,
+) -> RunRecord:
+    incident_id, model, effort = record.incident_id, record.model, record.effort
     tools = [to_anthropic_tool(tool) for tool in (await mcp.list_tools()).tools]
     overview = await mcp.read_resource(f"incident://{incident_id}")
     overview_text = "".join(getattr(content, "text", "") for content in overview.contents)
+    if langfuse is not None:
+        langfuse.update_current_span(input=overview_text)
     messages: list[BetaMessageParam] = [
         {"role": "user", "content": first_user_message(overview_text)}
     ]
@@ -143,9 +231,38 @@ async def run_triage(
 
     for turn in range(1, turn_limit + 1):
         started = time.perf_counter()
-        response = await messages_api.create(
-            **request_params(model=model, effort=effort, tools=tools, messages=messages)
-        )
+        with _observe(
+            langfuse,
+            name=f"turn {turn}",
+            as_type="generation",
+            model=model,
+            model_parameters={"effort": effort, "max_tokens": MAX_TOKENS},
+            input=_plain(messages),
+        ) as generation:
+            response = await messages_api.create(
+                **request_params(model=model, effort=effort, tools=tools, messages=messages)
+            )
+            if generation is not None:
+                fallback = response.model != model
+                generation.update(
+                    output=_plain(response.content),
+                    usage_details={
+                        "input": response.usage.input_tokens,
+                        "output": response.usage.output_tokens,
+                        "cache_read_input_tokens": response.usage.cache_read_input_tokens or 0,
+                        "cache_creation_input_tokens": response.usage.cache_creation_input_tokens
+                        or 0,
+                    },
+                    metadata={
+                        "served_by": response.model,
+                        "stop_reason": response.stop_reason,
+                        "request_id": getattr(response, "_request_id", None),
+                    },
+                    level="WARNING" if fallback else "DEFAULT",
+                    status_message=f"served by fallback model {response.model}"
+                    if fallback
+                    else None,
+                )
         record.turns = turn
         record.served_by.append(response.model)
         record.usage.add(response)
@@ -192,13 +309,21 @@ async def run_triage(
                     arguments: dict[str, Any] = dict(block.input)
                     if calls_made >= tool_budget:
                         budget_notice_sent = True
-                        results.append(
-                            error_result(
-                                block.id,
-                                f"tool budget of {tool_budget} calls exhausted; "
-                                "answer now with the evidence you have",
-                            )
+                        warning = error_result(
+                            block.id,
+                            f"tool budget of {tool_budget} calls exhausted; "
+                            "answer now with the evidence you have",
                         )
+                        results.append(warning)
+                        with _observe(
+                            langfuse, name=block.name, as_type="tool", input=arguments
+                        ) as observation:
+                            if observation is not None:
+                                observation.update(
+                                    output=warning.get("content"),
+                                    level="WARNING",
+                                    status_message="over budget: not run",
+                                )
                         record.tool_calls.append(
                             ToolCallRecord(
                                 turn=turn,
@@ -211,7 +336,9 @@ async def run_triage(
                         continue
                     calls_made += 1
                     results.append(
-                        await _call_tool(record, mcp, turn, block.id, block.name, arguments)
+                        await _call_tool(
+                            record, mcp, turn, block.id, block.name, arguments, langfuse
+                        )
                     )
                 # All results in one user message: splitting them discourages parallel calls.
                 messages.append({"role": "user", "content": results})
@@ -232,15 +359,24 @@ async def _call_tool(
     tool_use_id: str,
     name: str,
     arguments: dict[str, Any],
+    langfuse: Langfuse | None,
 ) -> BetaToolResultBlockParam:
     started = time.perf_counter()
-    try:
-        result = await mcp.call_tool(name, arguments)
-        block = to_tool_result(tool_use_id, result)
-        is_error = bool(result.is_error)
-    except MCPError as exc:
-        block = error_result(tool_use_id, exc.message)
-        is_error = True
+    with _observe(langfuse, name=name, as_type="tool", input=arguments) as observation:
+        try:
+            result = await mcp.call_tool(name, arguments)
+            block = to_tool_result(tool_use_id, result)
+            is_error = bool(result.is_error)
+        except MCPError as exc:
+            block = error_result(tool_use_id, exc.message)
+            is_error = True
+        if observation is not None:
+            # Exactly what the model was given: the compact structured JSON, or the error text.
+            observation.update(
+                output=block.get("content"),
+                level="ERROR" if is_error else "DEFAULT",
+                status_message="tool error" if is_error else None,
+            )
     duration_ms = round((time.perf_counter() - started) * 1000, 1)
     outcome: Literal["ok", "tool_error"] = "tool_error" if is_error else "ok"
     record.tool_calls.append(
