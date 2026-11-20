@@ -70,6 +70,6 @@ uv run --env-file .env triage run INC-0001
 - **`served_by`:** the model that served each turn. It differs from `model` if a refusal fell back to another model.
 - **The run's history:** every tool call and its outcome, summed token usage and the API request IDs.
 
-Logs are JSON lines on stderr. The exit code is 0 when the agent answered, 1 when the run ended without a valid answer, and 2 for a usage or configuration error such as a missing key or an unknown incident. Options: `--model`, `--effort`, `--tool-budget` (default 12) and `--turn-limit` (default 20). The request settings and the reasons for them are in [ADR-002](docs/adr/0002-agent-model-and-requests.md).
+Logs are JSON lines on stderr, apart from any notice the Anthropic SDK prints itself (for example, when another Anthropic credential exists on the machine and `ANTHROPIC_API_KEY` takes precedence over it). The exit code is 0 when the agent answered, 1 when the run ended without a valid answer, and 2 for a usage or configuration error such as a missing key or an unknown incident. Options: `--model`, `--effort`, `--tool-budget` (default 12) and `--turn-limit` (default 20). The request settings and the reasons for them are in [ADR-002](docs/adr/0002-agent-model-and-requests.md).
 
 The agent's tests use a scripted stand-in for the model, so CI and `uv run pytest` need no key.
