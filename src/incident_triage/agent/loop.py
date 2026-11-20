@@ -104,6 +104,7 @@ class RunRecord(BaseModel):
     """Everything a run did. #6 turns it into a trace; #7 prices it; graders read `answer`."""
 
     incident_id: str
+    case_id: str | None = None  # the golden case (GC-…) this run answered, if any
     outcome: Outcome
     answer: TriageAnswer | None = None
     model: str
@@ -160,6 +161,7 @@ async def run_triage(
     turn_limit: int = DEFAULT_TURN_LIMIT,
     langfuse: Langfuse | None = None,
     git_sha: str = "unknown",
+    case_id: str | None = None,
 ) -> RunRecord:
     """Triage one incident. Raises MCPError only if the incident's overview can't be read.
 
@@ -168,7 +170,12 @@ async def run_triage(
     the run is untraced and otherwise identical.
     """
     record = RunRecord(
-        incident_id=incident_id, outcome="turn_limit", model=model, effort=effort, git_sha=git_sha
+        incident_id=incident_id,
+        case_id=case_id,
+        outcome="turn_limit",
+        model=model,
+        effort=effort,
+        git_sha=git_sha,
     )
     if langfuse is None:
         return _priced(await _run(record, mcp, messages_api, tool_budget, turn_limit, None))
@@ -179,6 +186,7 @@ async def run_triage(
         git=git_sha,
         tool_budget=tool_budget,
         turn_limit=turn_limit,
+        case_id=case_id,
     )
     with (
         propagate_attributes(**attributes),
