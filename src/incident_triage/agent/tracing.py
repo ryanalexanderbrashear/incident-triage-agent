@@ -19,6 +19,12 @@ from typing import Any
 from langfuse import Langfuse
 
 KEY_VARIABLES = ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY")
+# The host: LANGFUSE_BASE_URL, or the deprecated LANGFUSE_HOST, which the SDK still honours.
+# Without either, the SDK defaults to the EU host, and keys from another region are rejected
+# there at export time: the run would be silently untraced (#47).
+URL_VARIABLES = ("LANGFUSE_BASE_URL", "LANGFUSE_HOST")
+# Ancestor of the OTLP exporters' loggers; failed exports are logged at ERROR below it.
+EXPORTER_LOGGER = "opentelemetry.exporter.otlp"
 TRACE_NAME = "triage"
 REDACTED = "[redacted]"
 
@@ -51,11 +57,47 @@ def langfuse_client(**options: Any) -> Langfuse:
     return Langfuse(mask=redact, **options)
 
 
+def langfuse_config_problem() -> str | None:
+    """Why tracing can't be configured from the environment, or None if it can."""
+    missing = [name for name in KEY_VARIABLES if not os.environ.get(name)]
+    if not any(os.environ.get(name) for name in URL_VARIABLES):
+        missing.append("LANGFUSE_BASE_URL")
+    return f"{' and '.join(missing)} not set" if missing else None
+
+
+def uses_deprecated_host() -> bool:
+    return not os.environ.get("LANGFUSE_BASE_URL") and bool(os.environ.get("LANGFUSE_HOST"))
+
+
 def make_langfuse() -> Langfuse | None:
-    """The real client from the environment, or None (an untraced run) when keys are missing."""
-    if not all(os.environ.get(name) for name in KEY_VARIABLES):
+    """The real client from the environment, or None (an untraced run) when it's incomplete."""
+    if langfuse_config_problem() is not None:
         return None
     return langfuse_client()
+
+
+class ExportFailureWatcher(logging.Handler):
+    """Collects span-export failures while active.
+
+    The OTLP exporter reports a rejected or undeliverable batch only by logging at ERROR (for
+    example "Failed to export span batch code: 401, reason: Unauthorized"). Langfuse.flush()
+    exports synchronously, so wrapping the flush in this context manager is enough to know
+    whether the trace was actually delivered.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self.errors: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.errors.append(record.getMessage())
+
+    def __enter__(self) -> ExportFailureWatcher:
+        logging.getLogger(EXPORTER_LOGGER).addHandler(self)
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        logging.getLogger(EXPORTER_LOGGER).removeHandler(self)
 
 
 def git_sha(cwd: str | None = None) -> str:

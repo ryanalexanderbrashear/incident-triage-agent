@@ -117,7 +117,8 @@ class RunRecord(BaseModel):
     usage: TokenUsage = Field(default_factory=TokenUsage)
     request_ids: list[str] = Field(default_factory=list[str])
     git_sha: str = "unknown"
-    trace_id: str | None = None  # null when the run was not traced
+    trace_id: str | None = None  # null when the run was not traced, or its export failed
+    trace_error: str | None = None  # why the trace was not delivered, when export failed
     turn_records: list[TurnRecord] = Field(default_factory=list[TurnRecord])
     cost_usd: float | None = None  # sum of turn costs; None if any turn could not be priced
     prices_verified: str = PRICES_VERIFIED

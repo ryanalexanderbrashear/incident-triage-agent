@@ -33,7 +33,14 @@ from incident_triage.agent.loop import (
     log_event,
     run_triage,
 )
-from incident_triage.agent.tracing import git_sha, make_langfuse, trace_url
+from incident_triage.agent.tracing import (
+    ExportFailureWatcher,
+    git_sha,
+    langfuse_config_problem,
+    make_langfuse,
+    trace_url,
+    uses_deprecated_host,
+)
 from incident_triage.fixtures.models import INCIDENT_ID_PATTERN
 
 CREDENTIAL_VARIABLES = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
@@ -97,9 +104,10 @@ def _export(args: argparse.Namespace, observations_api: ObservationsAPI | None) 
     if observations_api is None:
         client = make_langfuse()
         if client is None:
+            problem = langfuse_config_problem()
             sys.stderr.write(
-                "triage: exporting a trace needs LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY and "
-                "LANGFUSE_BASE_URL; run with `uv run --env-file .env triage trace export …`\n"
+                f"triage: exporting a trace needs Langfuse credentials ({problem}); "
+                "run with `uv run --env-file .env triage trace export …`\n"
             )
             return 2
         observations_api = client.api.observations
@@ -132,8 +140,11 @@ async def _run(
         log_event(
             "tracing_disabled",
             level=logging.WARNING,
-            reason="LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are not both set",
+            reason=langfuse_config_problem() or "no Langfuse client",
         )
+    elif uses_deprecated_host():
+        log_event("tracing_note", note="LANGFUSE_HOST is deprecated; prefer LANGFUSE_BASE_URL")
+    watcher = ExportFailureWatcher()
     # The MCP client runs in a task group, so an error raised inside it can arrive wrapped in an
     # ExceptionGroup; except* matches it either way (and cannot itself contain a return).
     try:
@@ -152,14 +163,22 @@ async def _run(
     except* MCPError as group:
         failure = _first_mcp_error(group).message
     finally:
-        # A short-lived process: export the trace before exiting, whatever happened above.
+        # A short-lived process: export the trace before exiting, whatever happened above. The
+        # export is synchronous, so the watcher sees any failure before this block ends.
         if langfuse is not None:
-            langfuse.flush()
+            with watcher:
+                langfuse.flush()
+    if record is not None and watcher.errors:
+        # Never claim a trace that was not delivered (#47).
+        record.trace_id = None
+        record.trace_error = "; ".join(dict.fromkeys(watcher.errors))
     if record is None:
         sys.stderr.write(f"triage: {failure}\n")
         return 2
     sys.stdout.write(record.model_dump_json(indent=2) + "\n")
-    if langfuse is not None and record.trace_id is not None:
+    if record.trace_error is not None:
+        log_event("trace_export_failed", level=logging.WARNING, error=record.trace_error)
+    elif langfuse is not None and record.trace_id is not None:
         url = trace_url(langfuse, record.trace_id, log=log_event)
         log_event("trace", trace_id=record.trace_id, url=url)
     log_event("run_finished", incident_id=args.incident_id, outcome=record.outcome)
