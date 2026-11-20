@@ -17,7 +17,7 @@ A reference implementation, not a product. What sets it apart is that each claim
 ## Capabilities and Constraints
 
 - Python 3.11+; the MCP server is written from scratch for this project.
-- The server is read-only. It exposes search, lookup and retrieval tools and takes no remediation actions.
+- The server is read-only, with one planned exception: a single simulated write tool that writes only to a local sink and is gated by dry-run, confirmation, idempotency and an audit log. It never touches a real chat, paging or ticketing product.
 - All data is synthetic. No real logs, tickets or employer material appear in the repository, in prompts or in traces.
 - The agent talks to the server over MCP, over stdio locally and Streamable HTTP when served.
 

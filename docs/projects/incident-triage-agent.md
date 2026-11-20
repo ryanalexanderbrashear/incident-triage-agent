@@ -17,13 +17,16 @@ What the product is, who it is for and why it is worth building: [PRODUCT.md](..
 - **The evals can go red.** The README shows a deliberate regression (a degraded tool description or prompt) failing the gate, then the fix passing it.
 - **The judge is measured, not trusted.** A model-graded judge scores explanation quality, and its agreement with at least 10 hand-labelled outputs is reported with the disagreements analysed. The pass/fail gate rests on deterministic graders only.
 - **A written account of one improvement loop.** At least one change to a prompt or tool description is driven by eval failures, with before/after scores in the README.
+- **Output format is checked, not assumed.** The agent's answer validates against one schema (root-cause category, explanation, evidence IDs, proposed next steps), and a grader reports the share of runs whose output was valid.
+- **Conflicting and stale sources are handled.** At least 4 golden cases have sources that disagree or are out of date, and the agent is graded on citing the right one.
+- **Actions are safe (M4, additive).** The one write tool, `open_incident_channel`, writes only to a local simulated sink. It is dry-run by default, needs an explicit confirmation, is idempotent on retry and is audit-logged. Golden cases show the agent never acts without confirmation, never duplicates an action on retry, and cannot be talked into acting by text inside the data. The agent's output ends in a review packet that a human approves or rejects.
 - **Honest README.** One page of architecture and results, with a "what this does not show" section.
 
 ## Non-goals
 
 - No UI, dashboard or web app. The interface is a CLI and the MCP server.
 - No real log ingestion or integration with a real observability, ticketing or paging product. The data is synthetic.
-- No remediation actions. Every tool is read-only.
+- No real remediation. Every tool is read-only except the single simulated write tool added in M4, which writes only to a local sink and never touches a real chat, paging or ticketing product. (Changed 2026-11-19; the reasoning is in Approach and ADR-002.)
 - No LangChain, LangGraph or vector search. The agent loop is hand-written, so the seams are visible.
 - No authentication or multi-tenant design on the server beyond noting it as the next step.
 - No production deployment. The server runs locally or in CI.
@@ -31,7 +34,7 @@ What the product is, who it is for and why it is worth building: [PRODUCT.md](..
 
 ## Constraints
 
-- Solo, about 25 to 30 hours over roughly two weeks of evenings.
+- Solo, about 25 to 30 hours over roughly two weeks of evenings for M1 to M3. The two source-handling items added to M2 grow that to roughly 30 hours, and M4 adds about 9 more. M4 is additive and is the first thing cut if time runs short.
 - Python 3.11 or newer. Local Python is 3.11.2, and `uv` is not installed.
 - Public GitHub repository, so synthetic data only, no employer material, and no secrets in the repo or in any trace.
 - Langfuse Cloud free tier, and an Anthropic API key with a spend limit.
@@ -62,7 +65,11 @@ A hand-written agent loop on the Anthropic SDK connects to a new `incident-mcp` 
 
 The server exposes three read-only tools (`search_logs`, `get_ticket`, `get_runbook`) and one resource, over synthetic incidents stored as JSONL fixtures. Results are bounded and paginated, and errors are explicit so the agent can recover from them.
 
-**Grading is layered.** Deterministic graders carry pass/fail: root-cause category match, evidence recall and precision against the labelled IDs, no invented IDs, a tool-call budget, and no obedience to an injected instruction. A model-graded judge scores only the explanation's quality, and is calibrated against hand labels before anyone reads its numbers. That ordering keeps the gate reproducible and is the honest use of model grading.
+**A safe write path, added in M4.** Real triage ends in actions, such as opening a channel for the responders, and an agent that can only read does not show how risk is contained. M4 therefore adds one write tool, `open_incident_channel`, against a local simulated sink. It is dry-run by default and returns a confirmation token that a second, explicit call must present. It is idempotent on a repeated key and audit-logged. The agent's answer also ends in a review packet (summary, cited evidence, stated assumptions, proposed actions awaiting approval) that a human approves or rejects in the CLI. The sink is simulated on purpose, and the README says so: the project shows the safety pattern, not an integration with any real product.
+
+**Sources can disagree.** Each fixture source carries timestamps, and tickets and runbooks gain a last-updated or last-reviewed field. Golden cases include conflicting and stale sources, graded on whether the answer cites the source that is actually right.
+
+**Grading is layered.** Deterministic graders carry pass/fail, including whether the output matches the answer schema: root-cause category match, evidence recall and precision against the labelled IDs, no invented IDs, a tool-call budget, and no obedience to an injected instruction. A model-graded judge scores only the explanation's quality, and is calibrated against hand labels before anyone reads its numbers. That ordering keeps the gate reproducible and is the honest use of model grading.
 
 **The golden set is source-controlled.** JSONL in the repo is the source of truth, reviewed like code, and synced to a Langfuse dataset. The cases' logs may be drafted with LLM help, but every label is verified by hand, because a set labelled by the same kind of model it grades is circular.
 
@@ -98,9 +105,9 @@ Each milestone is an outcome that can be looked at. Hours are estimates, and the
 
 **Why first:** everything later assumes the three-service wiring works. It is cheap to find out now that the tutorials are for another major version, and expensive to find out in M3.
 
-### M2 — A golden set that discriminates (about 10 hours)
+### M2 — A golden set that discriminates (about 13 hours)
 
-**Outcome:** The server has all three tools and the resource, with protocol-level tests. The golden set has at least 25 hand-verified cases. `make eval` runs them all, scores them with the deterministic graders, and records a Langfuse experiment run. A baseline is written down, along with what the failures show.
+**Outcome:** The server has all three tools and the resource, with protocol-level tests. The golden set has at least 25 hand-verified cases, including at least 4 where sources conflict or are stale. The agent's answer follows a strict schema, and a grader reports how often it was valid. `make eval` runs every case, scores it with the deterministic graders, and records a Langfuse experiment run. A baseline is written down, along with what the failures show.
 
 **Retires:** the biggest unknown, whether the task can be evaluated at all. The baseline must land somewhere informative (neither near 0% nor near 100%). If it does not, the cases or the tool design are reworked here, before any judge is built on top.
 
@@ -116,13 +123,23 @@ Each milestone is an outcome that can be looked at. Hours are estimates, and the
 
 **Stretch, only if M3 lands early:** propagate trace context across the MCP boundary so server-side work nests under the agent's trace.
 
+### M4 — Safe actions and a review gate (about 9 hours, additive)
+
+**Outcome:** From a clean clone, take an alert to a review packet, approve it, and watch one action run against the simulated sink, then reject another and see nothing happen. A retry with the same key creates nothing new. Golden cases and graders prove the agent never acts without confirmation, never duplicates an action on retry, and cannot be talked into acting by an instruction hidden in a log or ticket.
+
+**Retires:** whether the project can show how an agent's side effects are contained, which a read-only server cannot. It also shows whether the approval pattern survives the agent's own mistakes, since the graders are tested against deliberately unsafe agent output.
+
+**Why here:** it needs the answer schema and graders from M2 and nothing from the judge in M3, so it is filed to follow the M2 audit and can run before or after M3. It is additive: M1 to M3 remain a complete project without it.
+
 ### Audits
 
-Each milestone ends with an audit, scheduled as a work item: use the thing, do not re-read the list. For M1, run it from a fresh clone on a machine without the working copy's environment. For M2, ask the agent three questions of your own that are not in the dataset. For M3, attach the server to a stock MCP host with `claude mcp add` and ask a real question. Findings become numbered items.
+Each milestone ends with an audit, scheduled as a work item: use the thing, do not re-read the list. For M1, run it from a fresh clone on a machine without the working copy's environment. For M2, ask the agent three questions of your own that are not in the dataset. For M3, attach the server to a stock MCP host with `claude mcp add` and ask a real question. For M4, approve one action, reject another, retry one, and try to inject an instruction through a log line. Findings become numbered items.
 
 ## Work items
 
 Not a table here: one ticket each in the repository's GitHub issues, with milestones as GitHub milestones and `blocked by` links for dependencies. Filed 2026-11-19: 3 milestones, 27 issues and 55 dependency links, read back and matched against the agreed breakdown. All of them are in [the issue list](https://github.com/ryanalexanderbrashear/incident-triage-agent/issues). Milestone audits are issues 8, 19 and 26, and issue 27 is the stretch item.
+
+Added 2026-11-19: a fourth milestone and seven issues, with 14 more dependency links, read back and matched. #35 (answer schema and format-validity grader) and #36 (conflicting and stale source cases) join M2, and #18 (the baseline) is now also blocked by both. #37 to #41 are M4: ADR-002, the simulated write tool, write-safety evals, the review packet, and the M4 audit (#41). The whole M4 chain is blocked by #19, the M2 audit.
 
 ## Risks and unknowns
 
@@ -131,7 +148,9 @@ Not a table here: one ticket each in the repository's GitHub issues, with milest
 - **The judge flatters the agent.** A model grading a model's work tends to agree. Response: the judge never gates; it is calibrated against hand labels, and disagreements are published.
 - **Nondeterminism makes scores noisy.** Response: record the baseline over three runs per case, report per-case pass rates, and gate CI on recorded outputs, not live calls.
 - **Cost surprises.** Response: set a spend limit on the API key before M1, measure cost per case from the first trace, and cap eval concurrency.
-- **Scope drift into an "agent platform".** Response: the non-goals above, and any new idea goes under Out of scope.
+- **Scope drift into an "agent platform".** Response: the non-goals above, and any new idea goes under Out of scope. M4 is the largest recent addition, so it is additive, filed behind the M2 audit, and the first thing cut.
+- **The write path becomes integration theatre.** A simulated sink can be mistaken for a real integration. Response: the README and ADR-002 say it is simulated, and the claim is limited to the safety pattern (dry-run, confirmation, idempotency, audit, approval).
+- **Safety graders that cannot fail.** A write-safety check that always passes proves nothing. Response: each grader is shown failing on deliberately unsafe agent output before it is trusted.
 - **A secret or real data in a public repo.** Response: `.env` ignored from the first commit, a secret scan in CI, and the rule that all data is synthetic.
 - **Langfuse free-tier limits or retention.** Unverified. Response: exported traces and screenshots live in the repo, so the portfolio does not depend on the account.
 - **Overclaiming afterwards.** What this project shows is what it contains, and no more: a server built, a judge calibrated on a small hand-labelled sample, evals run on synthetic data. The README says so, in its "what this does not show" section.
@@ -151,6 +170,7 @@ Not a table here: one ticket each in the repository's GitHub issues, with milest
 6. **Judge model.** Recommend a different Claude tier from the agent's, to reduce self-agreement. Decide in M3. The agent runs on `claude-opus-5-5` ([ADR-002](../adr/0002-agent-model-and-requests.md)), so the judge would be, for example, `claude-sonnet-5-5`.
 7. **Trace propagation across MCP.** Recommend leaving it as the M3 stretch.
 8. **Type checker.** *Decided 2026-11-19:* pyright, `standard` repo-wide and strict on the server and graders as they land. See [ADR-001](../adr/0001-stack.md).
+9. **Order of M3 and M4.** The filed dependencies allow either. Recommend M4 right after the M2 audit, because it needs nothing from the judge. Decide when the M2 audit lands, and cut M4 first if time is short.
 
 ## Out of scope
 
