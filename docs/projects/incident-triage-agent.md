@@ -26,7 +26,7 @@ What the product is, who it is for and why it is worth building: [PRODUCT.md](..
 
 - No UI, dashboard or web app. The interface is a CLI and the MCP server.
 - No real log ingestion or integration with a real observability, ticketing or paging product. The data is synthetic.
-- No real remediation. Every tool is read-only except the single simulated write tool added in M4, which writes only to a local sink and never touches a real chat, paging or ticketing product. (Changed 2026-11-19; the reasoning is in Approach and ADR-002.)
+- No real remediation. Every tool is read-only except the single simulated write tool added in M4, which writes only to a local sink and never touches a real chat, paging or ticketing product. (Changed 2026-11-19; the reasoning is in Approach and ADR-003.)
 - No LangChain, LangGraph or vector search. The agent loop is hand-written, so the seams are visible.
 - No authentication or multi-tenant design on the server beyond noting it as the next step.
 - No production deployment. The server runs locally or in CI.
@@ -139,7 +139,7 @@ Each milestone ends with an audit, scheduled as a work item: use the thing, do n
 
 Not a table here: one ticket each in the repository's GitHub issues, with milestones as GitHub milestones and `blocked by` links for dependencies. Filed 2026-11-19: 3 milestones, 27 issues and 55 dependency links, read back and matched against the agreed breakdown. All of them are in [the issue list](https://github.com/ryanalexanderbrashear/incident-triage-agent/issues). Milestone audits are issues 8, 19 and 26, and issue 27 is the stretch item.
 
-Added 2026-11-19: a fourth milestone and seven issues, with 14 more dependency links, read back and matched. #35 (answer schema and format-validity grader) and #36 (conflicting and stale source cases) join M2, and #18 (the baseline) is now also blocked by both. #37 to #41 are M4: ADR-002, the simulated write tool, write-safety evals, the review packet, and the M4 audit (#41). The whole M4 chain is blocked by #19, the M2 audit.
+Added 2026-11-19: a fourth milestone and seven issues, with 14 more dependency links, read back and matched. #35 (answer schema and format-validity grader) and #36 (conflicting and stale source cases) join M2, and #18 (the baseline) is now also blocked by both. #37 to #41 are M4: ADR-003, the simulated write tool, write-safety evals, the review packet, and the M4 audit (#41). The whole M4 chain is blocked by #19, the M2 audit.
 
 ## Risks and unknowns
 
@@ -149,7 +149,7 @@ Added 2026-11-19: a fourth milestone and seven issues, with 14 more dependency l
 - **Nondeterminism makes scores noisy.** Response: record the baseline over three runs per case, report per-case pass rates, and gate CI on recorded outputs, not live calls.
 - **Cost surprises.** Response: set a spend limit on the API key before M1, measure cost per case from the first trace, and cap eval concurrency.
 - **Scope drift into an "agent platform".** Response: the non-goals above, and any new idea goes under Out of scope. M4 is the largest recent addition, so it is additive, filed behind the M2 audit, and the first thing cut.
-- **The write path becomes integration theatre.** A simulated sink can be mistaken for a real integration. Response: the README and ADR-002 say it is simulated, and the claim is limited to the safety pattern (dry-run, confirmation, idempotency, audit, approval).
+- **The write path becomes integration theatre.** A simulated sink can be mistaken for a real integration. Response: the README and ADR-003 say it is simulated, and the claim is limited to the safety pattern (dry-run, confirmation, idempotency, audit, approval).
 - **Safety graders that cannot fail.** A write-safety check that always passes proves nothing. Response: each grader is shown failing on deliberately unsafe agent output before it is trusted.
 - **A secret or real data in a public repo.** Response: `.env` ignored from the first commit, a secret scan in CI, and the rule that all data is synthetic.
 - **Langfuse free-tier limits or retention.** Unverified. Response: exported traces and screenshots live in the repo, so the portfolio does not depend on the account.
