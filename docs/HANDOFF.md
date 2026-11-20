@@ -4,6 +4,11 @@ For a Claude Code instance (or a person) picking up development. Read this, then
 
 **State as of 2026-11-19:** planning is finished. #1 added the `uv` project, the lint, type-check and test gates, and CI with a secret scan. #2 recorded the stack in [ADR-001](adr/0001-stack.md). #3 added the fixture models, loader and two synthetic seed incidents (`incident_triage.fixtures`). #4 added `incident-mcp` v0 (`incident_triage.server`) with `search_logs` over stdio and Streamable HTTP, and JSON request logging on stderr. #9 (taken ahead of M1's remaining issues because it needs no key) added `get_ticket`, `get_runbook`, the `incident://` overview resource and fixture size limits. #10 made response size actually bounded (every fixture field limited, a 16,000-character response budget, size-capped `search_logs` pages), rejected unknown tool arguments, and added a protocol test suite that runs in-process and over real stdio. There is no agent or eval code yet. The repository, 3 milestones, 27 issues and 55 dependency links are in place at <https://github.com/ryanalexanderbrashear/incident-triage-agent>. Check `blocked by` for the next unblocked issue; #5 (the agent loop) is next and is the first issue that needs the Anthropic API key, so ask the human for it then. #5 should read the `incident://` resource into the prompt, because the model sees only tools and the overview is where it learns ticket IDs. The SDK returns each structured tool result twice (structured content and JSON text): #5 should pass the model one of them, not both.
 
+**Scope added 2026-11-19, after the points above were written.** The plan now has a fourth milestone and two more M2 issues, and the issue list is 34 issues, not 27. Read the updated plan before picking up M2 work.
+- **#35** (M2): a strict answer schema (root-cause category, explanation, evidence IDs, proposed next steps) with a bounded retry and a format-validity grader. **#5 should not wait for it**, but should leave the final answer easy to validate, and #35 builds on #5. #18 (the baseline) is now also blocked by #35 and #36.
+- **#36** (M2): golden cases where sources conflict or are stale. Runbooks have no review date and tickets no updated-at field today, so this adds `last_reviewed_at` and `updated_at` to the fixtures and tool results first.
+- **#37 to #41** (M4, additive): ADR-002, one simulated write tool (`open_incident_channel`: dry-run default, confirmation token, idempotency key, audit log, local sink only), write-safety golden cases and graders, a review packet with an approve/reject step, and the M4 audit. The whole chain is blocked by #19. Until ADR-002 is merged, the server stays read-only, and nothing in M1 to M3 should be built to depend on M4.
+
 ## What you are building
 
 A small Python project that shows three things working together: a **new MCP server** (`incident-mcp`), a **golden-dataset eval harness**, and **Langfuse traces**. An agent answers synthetic incident alerts by calling the server's read-only tools, and every run is graded and traced. The full success criteria are in the plan. They are the definition of done, so check against them rather than against this page.
@@ -15,7 +20,7 @@ A small Python project that shows three things working together: a **new MCP ser
 3. **One pull request per issue**, branched from `main`. Return to `main` and `git pull` before cutting each branch, and never base a PR on another branch.
 4. **Run the gates one at a time and report each status:** `ruff check`, `ruff format --check`, the type checker, and `pytest`. Never read a gate's result through a pipe. Where you write a new test or checker, watch it fail against deliberately broken input before trusting it.
 5. **Check the docs.** `README.md` and the plan must stay true after every change. The PR description says which documents were checked, even when none changed.
-6. **Audit milestones by using the thing.** The three audit issues (one per milestone) require running the project from a fresh clone, not re-reading the issue list. File what you find as new issues.
+6. **Audit milestones by using the thing.** The four audit issues (one per milestone: #8, #19, #26 and #41) require running the project from a fresh clone, not re-reading the issue list. File what you find as new issues.
 7. Update the plan's **Status** and the issue state as work lands. When reality diverges from the plan, change the plan.
 
 ## Decisions already made
@@ -24,7 +29,7 @@ Do not reopen these without a reason, and record any change as an ADR.
 
 - **Python 3.11+, managed with `uv`.** The lockfile is committed.
 - **Hand-written agent loop** on the Anthropic SDK, with the MCP `Client` supplying the tools. No LangChain, LangGraph or vector search.
-- **The MCP server is new code**, with three read-only tools (`search_logs`, `get_ticket`, `get_runbook`) and one resource. It runs over stdio and Streamable HTTP.
+- **The MCP server is new code**, with three read-only tools (`search_logs`, `get_ticket`, `get_runbook`) and one resource. It runs over stdio and Streamable HTTP. M4 later adds exactly one simulated, approval-gated write tool, `open_incident_channel`, which writes only to a local sink (ADR-002 records it). Until then the server is read-only.
 - **Grading is layered.** Deterministic graders decide pass or fail and gate CI. A model-graded judge scores explanation quality only, and never gates.
 - **The golden set is JSONL in the repo**, the source of truth, and is synced to a Langfuse dataset. Every label is hand-verified by the human. LLM help is fine for drafting log text, but not for deciding labels.
 - **All data is synthetic**, and the repository is public.
