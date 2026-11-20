@@ -2,7 +2,7 @@
 
 A small Python project that shows an MCP server, a golden-dataset eval harness and Langfuse tracing working together. An agent triages synthetic incident alerts by calling a purpose-built, read-only MCP server (`incident-mcp`), and every run is scored and traced.
 
-**Status:** repository tooling, CI, the incident fixtures, the `incident-mcp` server (three tools and the `incident://` resource) and the agent loop with its `triage` CLI are in place (issues #1–#5, #9, #10); tracing and the evals are not built yet. Nothing here yet measures how well the agent triages. See [PRODUCT.md](PRODUCT.md) for what this is and [the project plan](docs/projects/incident-triage-agent.md) for how it will be built. Progress is tracked in the GitHub issues and milestones.
+**Status:** repository tooling, CI, the incident fixtures, the `incident-mcp` server (three tools and the `incident://` resource) the agent loop with its `triage` CLI, and Langfuse tracing are in place (issues #1–#6, #9, #10); the evals are not built yet. Nothing here yet measures how well the agent triages. See [PRODUCT.md](PRODUCT.md) for what this is and [the project plan](docs/projects/incident-triage-agent.md) for how it will be built. Progress is tracked in the GitHub issues and milestones.
 
 This README is replaced with real usage, architecture and results as the milestones land. It will only state numbers that a run produced.
 
@@ -70,6 +70,20 @@ uv run --env-file .env triage run INC-0001
 - **`served_by`:** the model that served each turn. It differs from `model` if a refusal fell back to another model.
 - **The run's history:** every tool call and its outcome, summed token usage and the API request IDs.
 
-Logs are JSON lines on stderr, apart from any notice the Anthropic SDK prints itself (for example, when another Anthropic credential exists on the machine and `ANTHROPIC_API_KEY` takes precedence over it). The exit code is 0 when the agent answered, 1 when the run ended without a valid answer, and 2 for a usage or configuration error such as a missing key or an unknown incident. Options: `--model`, `--effort`, `--tool-budget` (default 12) and `--turn-limit` (default 20). The request settings and the reasons for them are in [ADR-002](docs/adr/0002-agent-model-and-requests.md).
+Logs are JSON lines on stderr, apart from notices the Anthropic and Langfuse SDKs print themselves (for example, when another Anthropic credential exists on the machine and `ANTHROPIC_API_KEY` takes precedence over it). The exit code is 0 when the agent answered, 1 when the run ended without a valid answer, and 2 for a usage or configuration error such as a missing key or an unknown incident. Options: `--model`, `--effort`, `--tool-budget` (default 12) and `--turn-limit` (default 20). The request settings and the reasons for them are in [ADR-002](docs/adr/0002-agent-model-and-requests.md).
 
 The agent's tests use a scripted stand-in for the model, so CI and `uv run pytest` need no key.
+
+## Tracing
+
+With Langfuse keys in `.env` (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`), every `triage run` is one Langfuse trace. The run record's `trace_id` names it, and a `trace` line on stderr gives the ID and, when Langfuse can look it up, a link.
+
+| Observation | Type | Holds |
+|---|---|---|
+| `triage <incident_id>` | agent | The overview in, and the answer (or the outcome) out; marked as an error unless the agent answered |
+| `turn <n>` | generation | The full history sent and the response (thinking summary, text, tool calls); the model, effort and token usage as the API reports it; which model served it, marked as a warning if a fallback did |
+| `<tool name>` | tool | The arguments, and exactly what the model was given back; marked as an error for a tool error, or a warning when over budget |
+
+Every span carries the tags `case:<incident_id>`, `model:<model>`, `effort:<effort>` and `git:<sha>`, and metadata with the full git SHA (`-dirty` when the working tree has uncommitted changes). Anything shaped like an Anthropic or Langfuse key is replaced with `[redacted]` before export.
+
+Tracing is optional. Without the keys the run is untraced: `trace_id` is null and stderr says `tracing_disabled`. The Anthropic SDK's own OpenTelemetry spans are turned off, because each turn's generation already records the call. The reasons are in [ADR-002](docs/adr/0002-agent-model-and-requests.md).
