@@ -1,8 +1,9 @@
 # Incident Triage Agent
 
 **Status:** Approved
+**Progress:** M1 complete (2026-11-20). M2 in progress: #9 and #10 done.
 **Source:** user description
-**Updated:** 2026-11-19
+**Updated:** 2026-11-20
 
 ## Goal
 
@@ -99,7 +100,9 @@ Each milestone is an outcome that can be looked at. Hours are estimates, and the
 
 ### M1 — Walking skeleton (about 8 hours)
 
-**Outcome:** From a clean clone, one command runs one incident end to end, with the real model and the real Langfuse project. The CLI answers an alert using the new `incident-mcp` server over stdio, and a single trace appears in Langfuse with generations and a nested tool-call observation. CI is green on the same repo, running the server tests without any API key. One golden case can be run by name.
+**Outcome:** From a clean clone, one command runs one incident end to end, with the real model and the real Langfuse project. The CLI answers an alert using the new `incident-mcp` server over stdio, and a single trace appears in Langfuse with generations and a nested tool-call observation. CI is green on the same repo, running the server tests without any API key.
+
+**Status: complete, 2026-11-20.** Audited from a fresh clone at `ade76d5` ([report on #8](https://github.com/ryanalexanderbrashear/incident-triage-agent/issues/8#issuecomment-7027744625)): every sentence of this outcome was met. The audit's findings #47 (a run without `LANGFUSE_BASE_URL` silently lost its trace) and #49 (no `.env.example`) were fixed in M1, and #46 moved "one golden case can be run by name" to M2, where case IDs begin (#11). #48 (the README doesn't show how to call the server) was filed in M3.
 
 **Retires:** the SDK-version unknowns (`mcp` 2.x, `langfuse` 5.x, `anthropic` 2.x), the shape of a trace around tool use, the credentials and CI-secret handling, and the cost per run. The observability decisions above are made and implemented here, not later.
 
@@ -107,7 +110,7 @@ Each milestone is an outcome that can be looked at. Hours are estimates, and the
 
 ### M2 — A golden set that discriminates (about 13 hours)
 
-**Outcome:** The server has all three tools and the resource, with protocol-level tests. The golden set has at least 25 hand-verified cases, including at least 4 where sources conflict or are stale. The agent's answer follows a strict schema, and a grader reports how often it was valid. `make eval` runs every case, scores it with the deterministic graders, and records a Langfuse experiment run. A baseline is written down, along with what the failures show.
+**Outcome:** The server has all three tools and the resource, with protocol-level tests. The golden set has at least 25 hand-verified cases, including at least 4 where sources conflict or are stale. The agent's answer follows a strict schema, and a grader reports how often it was valid. `make eval` runs every case, scores it with the deterministic graders, and records a Langfuse experiment run. One golden case can be run by name (`triage run <case-id>`, #11). A baseline is written down, along with what the failures show.
 
 **Retires:** the biggest unknown, whether the task can be evaluated at all. The baseline must land somewhere informative (neither near 0% nor near 100%). If it does not, the cases or the tool design are reworked here, before any judge is built on top.
 
