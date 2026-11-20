@@ -36,11 +36,20 @@ ADR-001 chose a hand-written tool-use loop on the Anthropic SDK (`anthropic` 2.1
 | Anthropic SDK spans | Off (`AsyncAnthropic(open_telemetry=False)`, in `cli.make_anthropic`) | Langfuse registers the global OpenTelemetry provider, so the SDK would add an `anthropic.messages.create` span under every generation. Its `gen_ai.usage.input_tokens` includes cache reads, unlike the API's `usage.input_tokens`, which would give each turn two contradicting token records. `test_the_cli_client_emits_no_sdk_spans` proves it, against a control client that does emit one. |
 | Usage on generations | `input`, `output`, `cache_read_input_tokens` and `cache_creation_input_tokens`, exactly as the API reports them | One meaning per number. Pricing is #7's job. |
 | Content | Full: each generation's input is the full history sent, and tool observations hold exactly what the model received | The data is synthetic by rule, and content is what makes a trace useful for debugging. |
-| Redaction | Every client is built by `tracing.langfuse_client`, with `mask=redact`, which replaces anything shaped like `sk-ant-…`, `sk-lf-…` or `pk-lf-…` | The plan's "redaction check still runs on traces before export". The test uses the production constructor, so removing the mask fails it. |
+| Redaction | Every client is built by `tracing.langfuse_client`, with `mask=redact`, which replaces anything shaped like `sk-ant-…`, `sk-lf-…` or `pk-lf-…` in the trace content (inputs, outputs and the metadata the agent sets) | The plan's "redaction check still runs on traces before export". The test uses the production constructor, so removing the mask fails it. **Corrected in #7:** the mask does not see span metadata the Langfuse SDK adds itself, which includes its own public key (`scope.attributes.public_key`). That key is visible only inside the project. `triage trace export` strips it, along with OpenTelemetry resource attributes and the project ID, and refuses to write if anything key-shaped survives. |
 | Trace attributes | `propagate_attributes`: tags `case:`, `model:`, `effort:`, `git:`; metadata with the full git SHA (`-dirty` for uncommitted changes) | On every span, including other libraries' (verified on the `mcp` SDK's `tools/call` spans). |
 | Keys missing | The run continues untraced, logging `tracing_disabled`; `trace_id` is null | Keyless dev and CI runs keep working. The eval harness (#16) can require tracing. |
 | Export | `flush()` in a `finally`, then `shutdown()` | A short-lived CLI would otherwise exit before the batch exporter sends. |
 | Trace link | Best-effort, with a 5-second timeout | `Langfuse.get_trace_url()` makes a blocking API call that raises on failure. It must never fail a run. |
+
+### Cost (#7)
+
+| Setting | Value | Why |
+|---|---|---|
+| Where cost comes from | `RunRecord.cost_usd`, the sum of `turn_records[*].cost_usd`, from `agent/pricing.py` | Every run has a cost, traced or not. Langfuse's own pricing is the cross-check (it matched all six measured runs to within $0.0000004), not the source. |
+| Per-turn pricing | Each turn at the model in its `served_by` | A refusal fallback can serve a turn on a model with different prices. Summing usage first could not price that. The pricing page doesn't say how fallbacks are billed, so this is an assumption. |
+| Unknown model | `cost_usd` null, and `detail` names the model | Never a guessed figure. |
+| Price table | Opus 5.5 $4 / $20, 5-minute cache write $5, cache read $0.20 per million; Opus 5 and Opus 4.8, Sonnet 5.5 and Haiku 5.5 (≤ 100K) also listed | From the pricing page, read 2026-11-20 (`pricing.VERIFIED`). Update the table, its date and `docs/cost.md` together. |
 
 ## Alternatives considered
 

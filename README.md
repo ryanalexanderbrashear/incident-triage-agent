@@ -2,7 +2,7 @@
 
 A small Python project that shows an MCP server, a golden-dataset eval harness and Langfuse tracing working together. An agent triages synthetic incident alerts by calling a purpose-built, read-only MCP server (`incident-mcp`), and every run is scored and traced.
 
-**Status:** repository tooling, CI, the incident fixtures, the `incident-mcp` server (three tools and the `incident://` resource) the agent loop with its `triage` CLI, and Langfuse tracing are in place (issues #1–#6, #9, #10); the evals are not built yet. Nothing here yet measures how well the agent triages. See [PRODUCT.md](PRODUCT.md) for what this is and [the project plan](docs/projects/incident-triage-agent.md) for how it will be built. Progress is tracked in the GitHub issues and milestones.
+**Status:** repository tooling, CI, the incident fixtures, the `incident-mcp` server (three tools and the `incident://` resource) the agent loop with its `triage` CLI, Langfuse tracing and per-run cost are in place (issues #1–#7, #9, #10); the evals are not built yet. Nothing here yet measures how well the agent triages. See [PRODUCT.md](PRODUCT.md) for what this is and [the project plan](docs/projects/incident-triage-agent.md) for how it will be built. Progress is tracked in the GitHub issues and milestones.
 
 This README is replaced with real usage, architecture and results as the milestones land. It will only state numbers that a run produced.
 
@@ -84,6 +84,25 @@ With Langfuse keys in `.env` (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LAN
 | `turn <n>` | generation | The full history sent and the response (thinking summary, text, tool calls); the model, effort and token usage as the API reports it; which model served it, marked as a warning if a fallback did |
 | `<tool name>` | tool | The arguments, and exactly what the model was given back; marked as an error for a tool error, or a warning when over budget |
 
-Every span carries the tags `case:<incident_id>`, `model:<model>`, `effort:<effort>` and `git:<sha>`, and metadata with the full git SHA (`-dirty` when the working tree has uncommitted changes). Anything shaped like an Anthropic or Langfuse key is replaced with `[redacted]` before export.
+Every span carries the tags `case:<incident_id>`, `model:<model>`, `effort:<effort>` and `git:<sha>`, and metadata with the full git SHA (`-dirty` when the working tree has uncommitted changes). Anything shaped like an Anthropic or Langfuse key in the trace content (inputs, outputs and the metadata the agent sets) is replaced with `[redacted]` before it is sent. The Langfuse SDK separately attaches its own public key to each span as instrumentation metadata. That is visible only inside your own Langfuse project, and `triage trace export` strips it.
 
 Tracing is optional. Without the keys the run is untraced: `trace_id` is null and stderr says `tracing_disabled`. The Anthropic SDK's own OpenTelemetry spans are turned off, because each turn's generation already records the call. The reasons are in [ADR-002](docs/adr/0002-agent-model-and-requests.md).
+
+To export a trace as JSON, for example for `docs/traces/`:
+
+```bash
+uv run --env-file .env triage trace export <trace_id> --out docs/traces/<name>.json
+```
+
+The export fetches every observation from Langfuse's Observations API, drops the SDK's span metadata (including its public key), OpenTelemetry resource attributes and the account's project ID, redacts anything key-shaped, and refuses to write if anything key-shaped survives. [`docs/traces/INC-0001.json`](docs/traces/INC-0001.json) is one such export.
+
+## Cost
+
+Each run record carries `cost_usd` and per-turn usage (`turn_records`), with every turn priced at the model that served it from a dated price table (`src/incident_triage/agent/pricing.py`, checked 2026-11-20). Measured on 2026-11-20, over 3 runs of each seed incident ([`docs/cost.md`](docs/cost.md), with every run record in [`docs/runs/2026-11-20/`](docs/runs/2026-11-20/)):
+
+| | Cost per run (min / median / max) | Turns | Tool calls |
+|---|---|---|---|
+| INC-0001 | $0.0370 / $0.0508 / $0.0608 | 3 | 4 |
+| INC-0002 | $0.0248 / $0.0419 / $0.0535 | 3 | 3 |
+
+The spread comes from the prompt cache: each case's first run wrote the shared prefix, and later runs within 5 minutes read it. Langfuse's independent pricing matched every run to within $0.0000004. These are two easy seed incidents, not a prediction for M2's golden cases.

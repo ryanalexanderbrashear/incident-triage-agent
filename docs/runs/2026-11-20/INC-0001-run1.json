@@ -1,0 +1,126 @@
+{
+  "incident_id": "INC-0001",
+  "outcome": "answered",
+  "answer": {
+    "root_cause_category": "config_or_deploy_change",
+    "explanation": "The checkout-api 2026.11.3 deploy at 14:01:30 raised WORKER_CONCURRENCY from 8 to 32 (LOG-0001-0006). The service then started 32 workers (LOG-0001-0007) but the orders-db pool stayed at max_connections 20 (LOG-0001-0008). Before the deploy the pool had 6 of 20 connections in use and nothing waiting (LOG-0001-0003). After it, usage climbed to 17 with 3 waiting (LOG-0001-0013), then the pool filled completely and the queue grew to 70 (LOG-0001-0016, LOG-0001-0038). checkout-api then timed out after 3000 ms waiting for a connection (LOG-0001-0023) and returned 503s (LOG-0001-0024), which pushed p99 latency to 3020 ms (LOG-0001-0036). That matches TKT-0001: customers see checkout spin, then fail. The cache miss spike after the deploy is a red herring: the miss rate was back to normal by 14:04:58 (LOG-0001-0014), but the pool kept getting worse. The pool did not run out on its own; the config change caused it. Rolling back WORKER_CONCURRENCY, or sizing the pool to match it, should end the incident.",
+    "evidence_ids": [
+      "LOG-0001-0003",
+      "LOG-0001-0006",
+      "LOG-0001-0007",
+      "LOG-0001-0008",
+      "LOG-0001-0013",
+      "LOG-0001-0014",
+      "LOG-0001-0016",
+      "LOG-0001-0023",
+      "LOG-0001-0024",
+      "LOG-0001-0036",
+      "LOG-0001-0038",
+      "TKT-0001"
+    ]
+  },
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "served_by": [
+    "claude-opus-5-5",
+    "claude-opus-5-5",
+    "claude-opus-5-5"
+  ],
+  "turns": 3,
+  "tool_calls": [
+    {
+      "turn": 1,
+      "name": "search_logs",
+      "arguments": {
+        "incident_id": "INC-0001",
+        "level": "WARN",
+        "limit": 50
+      },
+      "outcome": "ok",
+      "duration_ms": 64.6
+    },
+    {
+      "turn": 1,
+      "name": "get_ticket",
+      "arguments": {
+        "ticket_id": "TKT-0001"
+      },
+      "outcome": "ok",
+      "duration_ms": 10.6
+    },
+    {
+      "turn": 1,
+      "name": "search_logs",
+      "arguments": {
+        "incident_id": "INC-0001",
+        "service": "deployer"
+      },
+      "outcome": "ok",
+      "duration_ms": 5.1
+    },
+    {
+      "turn": 2,
+      "name": "search_logs",
+      "arguments": {
+        "incident_id": "INC-0001",
+        "limit": 20,
+        "level": "INFO"
+      },
+      "outcome": "ok",
+      "duration_ms": 12.7
+    }
+  ],
+  "stop_reason": "end_turn",
+  "refusal_category": null,
+  "detail": null,
+  "usage": {
+    "input_tokens": 8,
+    "output_tokens": 1035,
+    "cache_creation_input_tokens": 7703,
+    "cache_read_input_tokens": 7794
+  },
+  "request_ids": [
+    "req_011ChDJdWpyA7tBR5LhChgD1",
+    "req_011ChDJdjGKzF7o4kcna3jqJ",
+    "req_011ChDJdwEuYnLXoqNYCTF3A"
+  ],
+  "git_sha": "4096ee8b86e58fb39a73171fca84c3a7179f5f32-dirty",
+  "trace_id": "d0f39057bf8ffef64331fe588a7aef92",
+  "turn_records": [
+    {
+      "turn": 1,
+      "served_by": "claude-opus-5-5",
+      "stop_reason": "tool_use",
+      "request_id": "req_011ChDJdWpyA7tBR5LhChgD1",
+      "input_tokens": 4,
+      "output_tokens": 230,
+      "cache_creation_input_tokens": 2398,
+      "cache_read_input_tokens": 0,
+      "cost_usd": 0.016606
+    },
+    {
+      "turn": 2,
+      "served_by": "claude-opus-5-5",
+      "stop_reason": "tool_use",
+      "request_id": "req_011ChDJdjGKzF7o4kcna3jqJ",
+      "input_tokens": 2,
+      "output_tokens": 178,
+      "cache_creation_input_tokens": 2998,
+      "cache_read_input_tokens": 2398,
+      "cost_usd": 0.019038
+    },
+    {
+      "turn": 3,
+      "served_by": "claude-opus-5-5",
+      "stop_reason": "end_turn",
+      "request_id": "req_011ChDJdwEuYnLXoqNYCTF3A",
+      "input_tokens": 2,
+      "output_tokens": 627,
+      "cache_creation_input_tokens": 2307,
+      "cache_read_input_tokens": 5396,
+      "cost_usd": 0.025162
+    }
+  ],
+  "cost_usd": 0.060806,
+  "prices_verified": "2026-11-20"
+}

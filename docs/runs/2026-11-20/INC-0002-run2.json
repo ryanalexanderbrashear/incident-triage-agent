@@ -1,0 +1,111 @@
+{
+  "incident_id": "INC-0002",
+  "outcome": "answered",
+  "answer": {
+    "root_cause_category": "expired_credential",
+    "explanation": "The TLS certificate for ledger-gateway.internal.example expired at about midnight UTC on 2026-11-12, and that broke settlements. cert-renewer tried to renew it on 11-10 and 11-11, failed both times because DNS validation timed out, then gave up after the maximum number of attempts (LOG-0002-0001, -0002, -0003). From 00:00:04 on 11-12, every payments-worker call to ledger-gateway failed with 'TLS handshake failed: certificate has expired' (LOG-0002-0010 and later). The worker retried, then moved each batch to the dead-letter queue. That drove the 97% error rate (LOG-0002-0032) and the queue backlog. Finance's ticket also says no settlements have been confirmed since just after midnight (TKT-0002). The DNS timeouts explain why renewal failed, but the trigger is the expired certificate: renewing or replacing it ends the incident. The long GC pauses are unrelated noise.",
+    "evidence_ids": [
+      "LOG-0002-0001",
+      "LOG-0002-0002",
+      "LOG-0002-0003",
+      "LOG-0002-0010",
+      "LOG-0002-0015",
+      "LOG-0002-0032",
+      "TKT-0002"
+    ]
+  },
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "served_by": [
+    "claude-opus-5-5",
+    "claude-opus-5-5",
+    "claude-opus-5-5"
+  ],
+  "turns": 3,
+  "tool_calls": [
+    {
+      "turn": 1,
+      "name": "search_logs",
+      "arguments": {
+        "incident_id": "INC-0002",
+        "level": "WARN",
+        "limit": 50
+      },
+      "outcome": "ok",
+      "duration_ms": 71.9
+    },
+    {
+      "turn": 1,
+      "name": "get_ticket",
+      "arguments": {
+        "ticket_id": "TKT-0002"
+      },
+      "outcome": "ok",
+      "duration_ms": 10.5
+    },
+    {
+      "turn": 2,
+      "name": "search_logs",
+      "arguments": {
+        "incident_id": "INC-0002",
+        "query": "cert",
+        "level": "INFO"
+      },
+      "outcome": "ok",
+      "duration_ms": 7.8
+    }
+  ],
+  "stop_reason": "end_turn",
+  "refusal_category": null,
+  "detail": null,
+  "usage": {
+    "input_tokens": 8,
+    "output_tokens": 711,
+    "cache_creation_input_tokens": 1571,
+    "cache_read_input_tokens": 13705
+  },
+  "request_ids": [
+    "req_011ChDJi9p4MCY2XNKUiaz7H",
+    "req_011ChDJiLKpduQWmo463UVER",
+    "req_011ChDJiUqJdo3Bxa1Gi4e43"
+  ],
+  "git_sha": "4096ee8b86e58fb39a73171fca84c3a7179f5f32-dirty",
+  "trace_id": "bd716539fd01f0973b490c1ae2034306",
+  "turn_records": [
+    {
+      "turn": 1,
+      "served_by": "claude-opus-5-5",
+      "stop_reason": "tool_use",
+      "request_id": "req_011ChDJi9p4MCY2XNKUiaz7H",
+      "input_tokens": 4,
+      "output_tokens": 155,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2375,
+      "cost_usd": 0.003591
+    },
+    {
+      "turn": 2,
+      "served_by": "claude-opus-5-5",
+      "stop_reason": "tool_use",
+      "request_id": "req_011ChDJiLKpduQWmo463UVER",
+      "input_tokens": 2,
+      "output_tokens": 130,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 5665,
+      "cost_usd": 0.003741
+    },
+    {
+      "turn": 3,
+      "served_by": "claude-opus-5-5",
+      "stop_reason": "end_turn",
+      "request_id": "req_011ChDJiUqJdo3Bxa1Gi4e43",
+      "input_tokens": 2,
+      "output_tokens": 426,
+      "cache_creation_input_tokens": 1571,
+      "cache_read_input_tokens": 5665,
+      "cost_usd": 0.017516
+    }
+  ],
+  "cost_usd": 0.024848,
+  "prices_verified": "2026-11-20"
+}
