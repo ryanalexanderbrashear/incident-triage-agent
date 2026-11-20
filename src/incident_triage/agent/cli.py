@@ -13,6 +13,7 @@ import os
 import re
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, cast, get_args
 
 from anthropic import AsyncAnthropic
@@ -41,7 +42,11 @@ from incident_triage.agent.tracing import (
     trace_url,
     uses_deprecated_host,
 )
+from incident_triage.fixtures import FixtureError, load_fixtures
 from incident_triage.fixtures.models import INCIDENT_ID_PATTERN
+from incident_triage.golden.loader import DEFAULT_PATH as GOLDEN_PATH
+from incident_triage.golden.loader import load_golden
+from incident_triage.golden.models import CASE_ID_PATTERN
 
 CREDENTIAL_VARIABLES = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 NO_KEY_MESSAGE = (
@@ -81,7 +86,12 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="triage", description="Triage a synthetic incident.")
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="Run the agent on one incident.")
-    run.add_argument("incident_id", help="e.g. INC-0001")
+    run.add_argument(
+        "incident_id", metavar="target", help="an incident (INC-0001) or a golden case (GC-0001)"
+    )
+    run.add_argument(
+        "--golden", type=Path, default=GOLDEN_PATH, help="golden cases file (default: %(default)s)"
+    )
     run.add_argument("--model", default=DEFAULT_MODEL)
     run.add_argument("--effort", choices=get_args(Effort), default=DEFAULT_EFFORT)
     run.add_argument("--tool-budget", type=int, default=DEFAULT_TOOL_BUDGET)
@@ -151,6 +161,7 @@ async def _run(
         async with Client(server) as mcp:  # pyright: ignore[reportArgumentType]
             record = await run_triage(
                 args.incident_id,
+                case_id=args.case_id,
                 mcp=mcp,
                 messages_api=messages_api,
                 model=args.model,
@@ -185,6 +196,28 @@ async def _run(
     return 0 if record.outcome == "answered" else 1
 
 
+def _resolve_case(case_id: str, golden_path: Path) -> str | None:
+    """The incident a golden case is about, or None (after saying why).
+
+    Only the incident ID leaves this function: the case's labels must never reach the agent.
+    """
+    try:
+        golden = load_golden(golden_path, load_fixtures())
+    except FixtureError as exc:
+        sys.stderr.write(f"triage: fixtures invalid: {exc}\n")
+        return None
+    case = golden.case(case_id)
+    if case is None:
+        hint = (
+            f"; {golden_path} has {len(golden.problems)} problem(s), see `make validate-golden`"
+            if golden.problems
+            else ""
+        )
+        sys.stderr.write(f"triage: unknown golden case {case_id} in {golden_path}{hint}\n")
+        return None
+    return case.incident_id
+
+
 def _first_mcp_error(error: BaseException) -> MCPError:
     """The innermost MCPError: task groups can nest the original several groups deep."""
     if isinstance(error, MCPError):
@@ -215,8 +248,17 @@ def main(
     args = _parser().parse_args(argv)
     if args.command == "trace":
         return _export(args, observations_api)
-    if re.fullmatch(INCIDENT_ID_PATTERN, args.incident_id) is None:
-        sys.stderr.write(f"triage: {args.incident_id!r} is not an incident ID like INC-0001\n")
+    args.case_id = None
+    if re.fullmatch(CASE_ID_PATTERN, args.incident_id) is not None:
+        resolved = _resolve_case(args.incident_id, args.golden)
+        if resolved is None:
+            return 2
+        args.case_id, args.incident_id = args.incident_id, resolved
+    elif re.fullmatch(INCIDENT_ID_PATTERN, args.incident_id) is None:
+        sys.stderr.write(
+            f"triage: {args.incident_id!r} is not an incident ID like INC-0001 "
+            "or a golden case ID like GC-0001\n"
+        )
         return 2
     if args.tool_budget < 1 or args.turn_limit < 1:
         sys.stderr.write("triage: --tool-budget and --turn-limit must be at least 1\n")

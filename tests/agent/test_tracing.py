@@ -199,7 +199,7 @@ async def test_case_model_effort_and_git_sha_are_on_every_span(traced: Traced) -
         assert _attr(span, A.TRACE_NAME) == "triage", span.name
         tags = list(_attr(span, A.TRACE_TAGS) or [])
         assert tags == [
-            "case:INC-0002",
+            "incident:INC-0002",
             "model:claude-opus-5-5",
             "effort:high",
             "git:0123456789ab",
@@ -262,8 +262,23 @@ def test_trace_attributes_shape() -> None:
         tool_budget=12,
         turn_limit=20,
     )
-    assert attrs["tags"] == ["case:INC-0001", "model:m", "effort:low", "git:abcdef012345"]
+    assert attrs["tags"] == ["incident:INC-0001", "model:m", "effort:low", "git:abcdef012345"]
     assert attrs["metadata"]["git_sha"] == "abcdef0123456789"
+    assert "case_id" not in attrs["metadata"]
+
+
+def test_a_golden_case_adds_a_case_tag() -> None:
+    attrs = trace_attributes(
+        incident_id="INC-0001",
+        model="m",
+        effort="low",
+        git="abcdef0123456789",
+        tool_budget=12,
+        turn_limit=20,
+        case_id="GC-0001",
+    )
+    assert attrs["tags"][:2] == ["incident:INC-0001", "case:GC-0001"]
+    assert attrs["metadata"]["case_id"] == "GC-0001"
 
 
 def test_git_sha_outside_a_checkout_is_unknown(tmp_path: Any) -> None:
