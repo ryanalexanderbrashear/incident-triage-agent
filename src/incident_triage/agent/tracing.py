@@ -28,6 +28,11 @@ _SECRET = re.compile(
 )
 
 
+def contains_secret(text: str) -> bool:
+    """Whether anything shaped like an Anthropic or Langfuse key appears in the text."""
+    return _SECRET.search(text) is not None
+
+
 def redact(*, data: Any, **_: Any) -> Any:
     """Langfuse mask function: redact secret-shaped strings anywhere in the exported data."""
     if isinstance(data, str):
