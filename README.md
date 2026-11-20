@@ -2,7 +2,7 @@
 
 A small Python project that shows an MCP server, a golden-dataset eval harness and Langfuse tracing working together. An agent triages synthetic incident alerts by calling a purpose-built, read-only MCP server (`incident-mcp`), and every run is scored and traced.
 
-**Status:** repository tooling, CI, the incident fixtures, the `incident-mcp` server (three tools and the `incident://` resource) the agent loop with its `triage` CLI, Langfuse tracing and per-run cost are in place (issues #1–#7, #9, #10); the evals are not built yet. Nothing here yet measures how well the agent triages. See [PRODUCT.md](PRODUCT.md) for what this is and [the project plan](docs/projects/incident-triage-agent.md) for how it will be built. Progress is tracked in the GitHub issues and milestones.
+**Status:** repository tooling, CI, the incident fixtures, the `incident-mcp` server (three tools and the `incident://` resource), the agent loop with its `triage` CLI, Langfuse tracing and per-run cost are in place: milestone M1 is complete, and M2 has begun (issues #1–#7, #9, #10, #46, #47, #49). The evals are not built yet. Nothing here yet measures how well the agent triages. See [PRODUCT.md](PRODUCT.md) for what this is and [the project plan](docs/projects/incident-triage-agent.md) for how it will be built. Progress is tracked in the GitHub issues and milestones.
 
 This README is replaced with real usage, architecture and results as the milestones land. It will only state numbers that a run produced.
 

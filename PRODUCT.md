@@ -23,4 +23,8 @@ A reference implementation, not a product. What sets it apart is that each claim
 
 ## Evidence on Hand
 
-None yet. Eval scores, calibration figures and trace screenshots are added as runs produce them. Never write a number here or in the README that a run did not produce.
+From M1 (2026-11-20):
+- **An exported trace of a real run,** [`docs/traces/INC-0001.json`](docs/traces/INC-0001.json): one triage run as Langfuse recorded it, with its model calls and tool calls.
+- **Measured cost per run** for the two seed incidents, in [`docs/cost.md`](docs/cost.md), with the run records it was computed from in [`docs/runs/2026-11-20/`](docs/runs/2026-11-20/).
+
+No eval scores or calibration figures yet: those come with M2's golden set and M3's judge. The seed incidents are not golden cases, so nothing here says how well the agent triages. Eval scores, calibration figures and further traces are added as runs produce them. Never write a number here or in the README that a run did not produce.
