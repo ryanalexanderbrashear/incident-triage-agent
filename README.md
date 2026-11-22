@@ -71,7 +71,7 @@ The agent needs an Anthropic API key. Put it in `.env` (git-ignored; see *Develo
 uv run --env-file .env triage run INC-0001
 ```
 
-`triage run` spawns `incident-mcp` over stdio, reads the incident's `incident://` overview, and runs a tool-use loop on `claude-opus-5-5` (effort `medium`) until the model answers. It prints one JSON run record to stdout:
+`triage run` takes an incident ID (`INC-0001`) or a golden case ID (`GC-0001`, see *Golden set*). For a case, only its incident reaches the agent; its labels never do. It spawns `incident-mcp` over stdio, reads the incident's `incident://` overview, and runs a tool-use loop on `claude-opus-5-5` (effort `medium`) until the model answers. It prints one JSON run record to stdout:
 
 - **`answer`:** `root_cause_category`, `explanation` and `evidence_ids`, or `null` if there was no valid answer.
 - **`outcome`:** `answered`, `invalid_answer`, `refused`, `truncated`, `budget_exhausted`, `turn_limit` or `unexpected_stop`.
@@ -81,6 +81,28 @@ uv run --env-file .env triage run INC-0001
 Logs are JSON lines on stderr, apart from notices the Anthropic and Langfuse SDKs print themselves (for example, when another Anthropic credential exists on the machine and `ANTHROPIC_API_KEY` takes precedence over it). The exit code is 0 when the agent answered, 1 when the run ended without a valid answer, and 2 for a usage or configuration error such as a missing key or an unknown incident. Options: `--model`, `--effort`, `--tool-budget` (default 12) and `--turn-limit` (default 20). The request settings and the reasons for them are in [ADR-002](docs/adr/0002-agent-model-and-requests.md).
 
 The agent's tests use a scripted stand-in for the model, so CI and `uv run pytest` need no key.
+
+## Golden set
+
+`golden/cases.jsonl` holds the golden cases: one JSON object per line, each linking one fixture incident to its hand-verified labels. It lives at the repository root, outside the package data the server serves, so labels can never reach the agent.
+
+| Field | Meaning |
+|---|---|
+| `id`, `incident_id` | `GC-NNNN`, and the fixture incident it labels (one case per incident) |
+| `difficulty` | `straightforward`, `hard` or `adversarial` |
+| `root_cause_category` | The trigger, from the same seven categories the agent answers with ([ADR-002](docs/adr/0002-agent-model-and-requests.md)) |
+| `evidence_ids` | The log records and tickets that **prove** the cause (recall is measured against these). Empty only for `cannot_determine` |
+| `supporting_ids` | Records a good answer may also cite without penalty, such as ones ruling out a red herring |
+| `injection_ids` | Records carrying an injected instruction (adversarial cases) |
+| `rationale` | Why the label is right: what a reviewer checks |
+| `label_status`, `verified_on` | `draft`, or `verified` with the date. **Only a human sets `verified`.** Cases drafted with LLM help stay `draft` until then, and the eval uses verified cases only |
+
+```bash
+make validate-golden                                   # every case against the fixtures; exit 1 on any problem
+uv run --env-file .env triage run GC-0001              # run one golden case by name
+```
+
+The validator reports each problem as `golden/cases.jsonl:<line>: <case id>: <problem>`. Every labelled ID must exist, be a log record or ticket, and belong to the case's own incident.
 
 ## Tracing
 

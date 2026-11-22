@@ -24,9 +24,13 @@ ADR-001 chose a hand-written tool-use loop on the Anthropic SDK (`anthropic` 2.1
 | Limits | 12 tool calls, 20 turns, `max_tokens` 16,000 (non-streaming) | Bounded cost per run. Over budget, the model gets one "answer now" error; ignoring it ends the run as `budget_exhausted`. |
 | Credentials | `ANTHROPIC_API_KEY` from `.env`, loaded with `uv run --env-file .env` | No new dependency, and the key never touches the repository, the logs or stdout. |
 
-### Root-cause categories (provisional until #11)
+### Root-cause categories (final as of #11, 2026-11-20)
 
 `config_or_deploy_change`, `resource_exhaustion`, `dependency_failure`, `expired_credential`, `code_defect`, `infrastructure`, `cannot_determine`. **Labelling rule:** the category is the trigger, the thing whose reversal ends the incident. The enum lives in `agent/answer.py`, so #11's golden labels import the same spelling.
+
+**Confirmed in #11** by the human, who owns labelling: these seven, with the trigger rule. Golden cases (`golden/cases.jsonl`) import the same enum, so labels and answers can't disagree on spelling. Changing the set from here on means changing this ADR and every golden case that uses a changed category.
+
+**Evidence, for the graders (#15).** A golden case labels `evidence_ids`, the records that prove the cause, against which recall is measured. It also labels optional `supporting_ids`, records a good answer may cite without penalty, such as ones ruling out a red herring. **Precision counts a cited ID as correct if it's in either list.** This came out of #5's live runs, which cited records ruling out alternatives: penalising them would reward citing less, not reasoning better.
 
 ### Tracing (#6)
 

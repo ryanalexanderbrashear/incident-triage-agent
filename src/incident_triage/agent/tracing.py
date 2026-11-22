@@ -125,14 +125,31 @@ def git_sha(cwd: str | None = None) -> str:
 
 
 def trace_attributes(
-    *, incident_id: str, model: str, effort: str, git: str, tool_budget: int, turn_limit: int
+    *,
+    incident_id: str,
+    model: str,
+    effort: str,
+    git: str,
+    tool_budget: int,
+    turn_limit: int,
+    case_id: str | None = None,
 ) -> dict[str, Any]:
-    """Keyword arguments for `langfuse.propagate_attributes`: stamped on every span in the trace."""
+    """Keyword arguments for `langfuse.propagate_attributes`: stamped on every span in the trace.
+
+    `incident:` names the fixture incident; `case:` is added only for a golden case (GC-…).
+    """
+    tags = [f"incident:{incident_id}"]
+    if case_id is not None:
+        tags.append(f"case:{case_id}")
+    tags += [f"model:{model}", f"effort:{effort}", f"git:{git[:12]}"]
+    metadata: dict[str, str] = {"incident_id": incident_id}
+    if case_id is not None:
+        metadata["case_id"] = case_id
     return {
         "trace_name": TRACE_NAME,
-        "tags": [f"case:{incident_id}", f"model:{model}", f"effort:{effort}", f"git:{git[:12]}"],
-        "metadata": {
-            "case_id": incident_id,
+        "tags": tags,
+        "metadata": metadata
+        | {
             "model": model,
             "effort": effort,
             "git_sha": git,
